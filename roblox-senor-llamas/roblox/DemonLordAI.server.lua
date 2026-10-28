@@ -31,6 +31,13 @@ local CONFIG = {
 	VIDA_MAX       = 5000,     -- vida del jefe
 	GIRO_SUAVE     = 5,        -- qué tan rápido voltea a verte
 
+	-- Rango de golpes cuerpo a cuerpo (zarpazo cuando te le acercas)
+	RANGO_MELEE    = 24,       -- distancia (studs) para que use garras
+	DANO_MELEE     = 38,       -- daño del zarpazo
+	ESPERA_MELEE   = 1.0,      -- segundos entre zarpazos
+
+	COOLDOWN_GOLPE = 0.4,      -- seg mínimos entre golpes de la MISMA arma al jefe
+
 	-- Tiempo entre ataques según la fase (menos = más agresivo)
 	ESPERA_FASE1   = 3.5,      -- 100%–66% de vida
 	ESPERA_FASE2   = 2.2,      -- 66%–33% de vida
@@ -91,14 +98,20 @@ crearBarraDeVida()
 
 -- Daño al jefe: cualquier parte que toque al demonio y tenga el atributo
 -- "DanoArma" (lo pones en espadas/proyectiles del jugador) le resta vida.
+-- Con cooldown por arma para que no se drene de un solo toque continuo.
+local ultimoGolpe: { [Instance]: number } = {}
+local function recibirGolpe(hit: BasePart)
+	local dano = hit:GetAttribute("DanoArma")
+	if typeof(dano) ~= "number" or vida.Value <= 0 then return end
+	local ahora = os.clock()
+	if ultimoGolpe[hit] and (ahora - ultimoGolpe[hit] < CONFIG.COOLDOWN_GOLPE) then return end
+	ultimoGolpe[hit] = ahora
+	vida.Value = math.max(0, vida.Value - dano)
+end
+
 for _, parte in demonio:GetDescendants() do
 	if parte:IsA("BasePart") then
-		parte.Touched:Connect(function(hit)
-			local dano = hit:GetAttribute("DanoArma")
-			if typeof(dano) == "number" and vida.Value > 0 then
-				vida.Value = math.max(0, vida.Value - dano)
-			end
-		end)
+		parte.Touched:Connect(recibirGolpe)
 	end
 end
 
@@ -203,8 +216,18 @@ task.spawn(function()
 				activo = true
 				print("[SeñorLlamas] ¡Un intruso entró! El demonio despierta. 🔥")
 			end
-			local fase, espera = faseActual()
-			lanzarPoder(fase, objetivo)
+			-- Si el jugador está cerca -> ZARPAZO (rango de golpes).
+			-- Si está lejos -> poder a distancia según la fase.
+			local espera
+			local dist = (objetivo.Position - raiz.Position).Magnitude
+			if dist <= CONFIG.RANGO_MELEE then
+				Poderes.zarpazo(CONFIG.DANO_MELEE, CONFIG.RANGO_MELEE, 120)
+				espera = CONFIG.ESPERA_MELEE
+			else
+				local fase, e = faseActual()
+				lanzarPoder(fase, objetivo)
+				espera = e
+			end
 			-- durante la espera, lo mantenemos mirando al objetivo
 			local t = 0
 			while t < espera and not muerto do

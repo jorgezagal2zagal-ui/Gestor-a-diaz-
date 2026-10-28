@@ -380,6 +380,48 @@ function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
 end
 
 -- ---------------------------------------------------------------------
+--  MELEE: ZARPAZO (golpe cuerpo a cuerpo en arco)
+-- ---------------------------------------------------------------------
+--  Daña a los jugadores que estén EN FRENTE del demonio y dentro del
+--  rango. Es el "rango de golpes" para cuando te le acercas.
+function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local d = dano or 35
+	local rango_ = rango or 22
+	local cosLimite = math.cos(math.rad((anguloGrados or 120) / 2))
+
+	-- VFX: tajo de garra al frente
+	local tajo = Instance.new("Part")
+	tajo.Anchored = true
+	tajo.CanCollide = false
+	tajo.CanQuery = false
+	tajo.Size = Vector3.new(rango_ * 1.6, rango_ * 1.2, 1)
+	tajo.CFrame = raiz.CFrame * CFrame.new(0, 0, -rango_ * 0.5)
+	tajo.Material = Enum.Material.Neon
+	tajo.Color = Color3.fromRGB(255, 90, 30)
+	tajo.Transparency = 0.3
+	emisorFuego(5, 50).Parent = tajo
+	tajo.Parent = Workspace
+	TweenService:Create(tajo, TweenInfo.new(0.3), { Transparency = 1 }):Play()
+	Debris:AddItem(tajo, 0.35)
+
+	-- Daño solo a quien esté dentro del arco frontal
+	local frente = raiz.CFrame.LookVector
+	for _, obj in objetivosVivos() do
+		local dir = obj.Position - raiz.Position
+		if dir.Magnitude <= rango_ then
+			local haciaObj = (dir.Magnitude > 0.1) and dir.Unit or frente
+			if frente:Dot(haciaObj) >= cosLimite then
+				local hum = obj.Parent and obj.Parent:FindFirstChildOfClass("Humanoid")
+				if hum then hum:TakeDamage(d) end
+				obj.AssemblyLinearVelocity = haciaObj * 60 + Vector3.new(0, 30, 0)
+			end
+		end
+	end
+end
+
+-- ---------------------------------------------------------------------
 --  7. METEORO COLOSAL (ataque final — brutal)
 -- ---------------------------------------------------------------------
 function Poderes.meteoroColosal(dano: number?, radio: number?)

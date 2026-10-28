@@ -15,11 +15,18 @@ Cuando un jugador entra a la ciudad, **el demonio despierta y lo ataca**.
 ```
 roblox-senor-llamas/
 ├── blender/
-│   └── senor_llamas.py        → genera el monstruo (detallado) + ciudad en Blender
+│   └── senor_llamas.py          → genera el monstruo (detallado) + ciudad en Blender
 └── roblox/
-    ├── DemonLordAI.server.lua → cerebro del jefe: zona, fases, vida (Luau)
-    └── Poderes.lua            → poderes brutales con efectos (ModuleScript)
+    ├── CiudadArena.server.lua   → construye la ciudad-arena jugable en Roblox
+    ├── DemonLordAI.server.lua   → cerebro del jefe: zona, fases, vida, melee (Luau)
+    ├── Poderes.lua              → poderes brutales + zarpazo (ModuleScript)
+    └── EspadaInfernal.server.lua→ arma del jugador para combatir al jefe
 ```
+
+> 💡 Dos formas de tener la ciudad:
+> - **Rápida y jugable:** usa `CiudadArena.server.lua` (la arma Roblox solito, sin Blender).
+> - **Bonita y con detalle:** usa el modelo de `blender/senor_llamas.py` y la importas.
+> Puedes usar la arena de Roblox para jugar y meter el demonio detallado de Blender encima.
 
 ---
 
@@ -57,14 +64,22 @@ roblox-senor-llamas/
    (invisible, solo es el "disparador" de la zona).
 
 ### c) Poner los scripts
-1. En **ReplicatedStorage** inserta un **ModuleScript**, renómbralo **`Poderes`**
-   y pega TODO el contenido de `roblox/Poderes.lua`.
-2. En **ServerScriptService** inserta un **Script** (no LocalScript) y pega
-   TODO el contenido de `roblox/DemonLordAI.server.lua`.
-3. **Play** ▶ y camina hacia la ciudad: el demonio despierta y te ataca. 🔥
+Inserta cada archivo en el lugar correcto (nombres exactos):
 
-> El Script carga el ModuleScript con `require(ReplicatedStorage.Poderes)`, así que
-> **ambos** tienen que existir con esos nombres exactos.
+| Archivo | Dónde va | Tipo | Nómbralo |
+|---------|----------|------|----------|
+| `Poderes.lua` | **ReplicatedStorage** | ModuleScript | `Poderes` |
+| `CiudadArena.server.lua` | **ServerScriptService** | Script | (libre) |
+| `DemonLordAI.server.lua` | **ServerScriptService** | Script | (libre) |
+| `EspadaInfernal.server.lua` | **ServerScriptService** | Script | (libre) |
+
+Luego **Play** ▶:
+1. `CiudadArena` construye la ciudad, la muralla, la lava, el spawn y la `ZonaCiudad`.
+2. Coloca tu Model **`SenorLlamas`** en el **centro (0, altura, 0)**.
+3. Apareces en la **puerta**, agarras la **Espada Infernal** (tecla 1) y entras a pelear. ⚔️🔥
+
+> El `DemonLordAI` carga `require(ReplicatedStorage.Poderes)`, así que el ModuleScript
+> **tiene que llamarse `Poderes`** y estar en ReplicatedStorage.
 
 ---
 
@@ -89,10 +104,32 @@ salvajes mientras le bajas la vida:
 - **Fase 3** (33–0%): modo furia — lava, meteoro colosal, ataca casi sin parar.
 - **Al morir:** nova + erupción final y se desvanece.
 
-### ¿Cómo le hago daño al jefe?
-En tus armas/proyectiles del jugador, ponle un **Attribute numérico llamado `DanoArma`**
-a la Part que golpea (p.ej. `espada:SetAttribute("DanoArma", 50)`). Cuando toque al
-demonio, le resta esa cantidad de vida automáticamente.
+---
+
+## 🏙️ LA CIUDAD-ARENA + COMBATE
+
+**`CiudadArena.server.lua`** arma todo el escenario jugable en Roblox:
+- Suelo de piedra, **anillo de edificios** con plaza central (ahí va el jefe).
+- **Charcos de lava** que queman al pisarlos (12 de daño/seg).
+- **Fogatas y llamaradas** de ambiente con luz.
+- **Muralla exterior con puerta** y torres.
+- **SpawnLocation** en la puerta: los jugadores entran por ahí.
+- Crea sola la **`ZonaCiudad`** que despierta al demonio.
+
+### ⚔️ Rango de golpes (melee)
+El jefe ahora combina distancia y cuerpo a cuerpo:
+- **Lejos** → poderes a distancia (meteoros, rayo, etc.).
+- **Cerca (≤ 24 studs)** → **ZARPAZO**: golpe de garra en arco frontal (120°) que
+  hace daño y te empuja. Ajusta `RANGO_MELEE`, `DANO_MELEE` y `ESPERA_MELEE` en el AI.
+
+### 🗡️ Cómo pelea el jugador
+`EspadaInfernal.server.lua` le da a cada jugador una **Espada Infernal** al aparecer:
+- Trae el atributo **`DanoArma = 60`** en la hoja.
+- Equípala (tecla **1**) y golpea al demonio acercándote: le baja la vida.
+- El jefe tiene **cooldown por arma** (`COOLDOWN_GOLPE`) para que no muera de un toque.
+
+> ¿Quieres otra arma (arco, hacha, magia)? Solo ponle el atributo `DanoArma` a la
+> parte que golpea y listo — el jefe ya sabe recibir daño de cualquier cosa con ese atributo.
 
 ---
 
