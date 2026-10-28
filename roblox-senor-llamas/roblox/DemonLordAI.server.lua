@@ -22,6 +22,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Poderes = require(ReplicatedStorage:WaitForChild("Poderes"))
+local Sonidos = require(ReplicatedStorage:WaitForChild("Sonidos"))
 
 -- ---------- CONFIGURACIÓN --------------------------------------------
 local CONFIG = {
@@ -185,6 +186,8 @@ end
 local muerto = false
 local function morir()
 	muerto = true
+	Sonidos.detenerMusica()
+	Sonidos.reproducir("muerte", raiz)
 	print("[SeñorLlamas] ¡El Señor de las Llamas ha sido derrotado!")
 	-- Explosión final espectacular
 	Poderes.novaDeFuego(90, 0)
@@ -208,6 +211,7 @@ end
 
 -- ---------- BUCLE PRINCIPAL ------------------------------------------
 local activo = false
+local ultimaFase = 1
 task.spawn(function()
 	while not muerto do
 		local objetivo = objetivoEnCiudad()
@@ -215,6 +219,8 @@ task.spawn(function()
 			if not activo then
 				activo = true
 				print("[SeñorLlamas] ¡Un intruso entró! El demonio despierta. 🔥")
+				Sonidos.reproducir("despertar", raiz)
+				Sonidos.iniciarMusica()
 			end
 			-- Si el jugador está cerca -> ZARPAZO (rango de golpes).
 			-- Si está lejos -> poder a distancia según la fase.
@@ -225,6 +231,10 @@ task.spawn(function()
 				espera = CONFIG.ESPERA_MELEE
 			else
 				local fase, e = faseActual()
+				if fase ~= ultimaFase then
+					ultimaFase = fase
+					Sonidos.reproducir("fase", raiz)
+				end
 				lanzarPoder(fase, objetivo)
 				espera = e
 			end
@@ -240,6 +250,7 @@ task.spawn(function()
 			if activo then
 				activo = false
 				print("[SeñorLlamas] La ciudad quedó vacía. El demonio duerme.")
+				Sonidos.detenerMusica()
 			end
 			task.wait(0.4)
 		end

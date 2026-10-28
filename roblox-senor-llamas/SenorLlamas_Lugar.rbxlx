@@ -23,6 +23,7 @@ local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local Sonidos = require(game:GetService("ReplicatedStorage"):WaitForChild("Sonidos"))
 
 local Poderes = {}
 
@@ -171,6 +172,7 @@ local function caerMeteoro(xz: Vector3, dano: number, radio: number)
 end
 
 function Poderes.lluviaDeMeteoros(cantidad: number?, dano: number?, radio: number?)
+	Sonidos.reproducir("meteoro", RAIZ)
 	local n = cantidad or 8
 	local d = dano or 30
 	local r = radio or 14
@@ -189,6 +191,7 @@ end
 --  2. PILARES DE FUEGO
 -- ---------------------------------------------------------------------
 function Poderes.pilaresDeFuego(dano: number?, radio: number?)
+	Sonidos.reproducir("pilares", RAIZ)
 	local d = dano or 35
 	local r = radio or 10
 	for _, obj in objetivosVivos() do
@@ -217,6 +220,7 @@ end
 --  3. NOVA DE FUEGO (onda expansiva gigante)
 -- ---------------------------------------------------------------------
 function Poderes.novaDeFuego(radioMax: number?, dano: number?)
+	Sonidos.reproducir("nova", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local rMax = radioMax or 50
@@ -251,6 +255,7 @@ end
 --  4. RAYO OCULAR (láser que persigue)
 -- ---------------------------------------------------------------------
 function Poderes.rayoOcular(objetivo: BasePart, duracion: number?, danoPorSeg: number?)
+	Sonidos.reproducir("rayo", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local dur = duracion or 2.5
@@ -295,6 +300,7 @@ end
 --  5. BOLAS INFERNALES TELEDIRIGIDAS
 -- ---------------------------------------------------------------------
 function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: number?)
+	Sonidos.reproducir("bolas", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local n = cantidad or 5
@@ -349,6 +355,7 @@ end
 --  6. ERUPCIÓN DE LAVA (géiseres por todo el mapa)
 -- ---------------------------------------------------------------------
 function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
+	Sonidos.reproducir("lava", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local n = cantidad or 14
@@ -385,6 +392,7 @@ end
 --  Daña a los jugadores que estén EN FRENTE del demonio y dentro del
 --  rango. Es el "rango de golpes" para cuando te le acercas.
 function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
+	Sonidos.reproducir("zarpazo", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local d = dano or 35
@@ -425,6 +433,7 @@ end
 --  7. METEORO COLOSAL (ataque final — brutal)
 -- ---------------------------------------------------------------------
 function Poderes.meteoroColosal(dano: number?, radio: number?)
+	Sonidos.reproducir("colosal", RAIZ)
 	local objetivos = objetivosVivos()
 	if #objetivos == 0 then return end
 	local d = dano or 90
@@ -470,7 +479,84 @@ function Poderes.meteoroColosal(dano: number?, radio: number?)
 end
 
 return Poderes
-]]></ProtectedString></Properties></Item></Item><Item class="ServerScriptService" referent="S"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX2"><Properties><string name="Name">CiudadArena</string><ProtectedString name="Source"><![CDATA[--!strict
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX2"><Properties><string name="Name">Sonidos</string><ProtectedString name="Source"><![CDATA[--!strict
+-- =====================================================================
+--  SONIDOS DEL SEÑOR DE LAS LLAMAS  (ModuleScript / Luau)
+-- =====================================================================
+--  DÓNDE VA:  ReplicatedStorage > ModuleScript llamado "Sonidos"
+--
+--  CÓMO PONER LOS SONIDOS:
+--   1. En Studio abre View > Toolbox > pestaña "Audio" y busca (ej. "roar",
+--      "explosion", "fire whoosh", "epic boss music").
+--   2. Clic derecho al audio > "Copy Asset ID".
+--   3. Pega el número abajo, entre las comillas: "rbxassetid://123456".
+--  Los que dejes vacíos ("") simplemente no suenan (no da error).
+-- =====================================================================
+
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+
+local Sonidos = {}
+
+-- ---------- PEGA AQUÍ TUS IDs ----------------------------------------
+local IDS: { [string]: string } = {
+	despertar = "",   -- rugido al despertar
+	musica    = "",   -- música épica de jefe (se repite)
+	zarpazo   = "",   -- tajo de garra
+	nova      = "",   -- onda expansiva
+	rayo      = "",   -- láser ocular
+	bolas     = "",   -- bolas de fuego
+	meteoro   = "",   -- meteoros cayendo
+	pilares   = "",   -- pilares de fuego
+	lava      = "",   -- erupción de lava
+	colosal   = "",   -- meteoro colosal
+	fase      = "",   -- rugido al cambiar de fase
+	muerte    = "",   -- muerte del jefe
+}
+
+local VOLUMEN: { [string]: number } = {
+	musica = 0.5,
+}
+-- --------------------------------------------------------------------
+
+local musicaActual: Sound? = nil
+
+-- Reproduce un sonido una vez, en la posición de 'donde' (o en el Workspace).
+function Sonidos.reproducir(nombre: string, donde: Instance?)
+	local id = IDS[nombre]
+	if not id or id == "" then return end
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = VOLUMEN[nombre] or 1
+	s.RollOffMaxDistance = 400
+	s.Parent = donde or Workspace
+	s:Play()
+	Debris:AddItem(s, 10)
+end
+
+-- Música de jefe en bucle (para todos los jugadores).
+function Sonidos.iniciarMusica()
+	local id = IDS.musica
+	if musicaActual or not id or id == "" then return end
+	local s = Instance.new("Sound")
+	s.Name = "MusicaJefe"
+	s.SoundId = id
+	s.Volume = VOLUMEN.musica or 0.5
+	s.Looped = true
+	s.Parent = Workspace
+	s:Play()
+	musicaActual = s
+end
+
+function Sonidos.detenerMusica()
+	if musicaActual then
+		musicaActual:Destroy()
+		musicaActual = nil
+	end
+end
+
+return Sonidos
+]]></ProtectedString></Properties></Item></Item><Item class="ServerScriptService" referent="S"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX3"><Properties><string name="Name">CiudadArena</string><ProtectedString name="Source"><![CDATA[--!strict
 -- =====================================================================
 --  CIUDAD ARENA EN LLAMAS  (Roblox / Luau)
 -- =====================================================================
@@ -712,7 +798,7 @@ zona.Parent = Workspace   -- en Workspace para que el AI la encuentre con WaitFo
 
 print(("[CiudadArena] Arena construida. Puerta en X=%d. Coloca 'SenorLlamas' en el centro.")
 	:format(math.floor(spawn.Position.X)))
-]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX3"><Properties><string name="Name">DemonLordAI</string><ProtectedString name="Source"><![CDATA[--!strict
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX4"><Properties><string name="Name">DemonLordAI</string><ProtectedString name="Source"><![CDATA[--!strict
 -- =====================================================================
 --  EL SEÑOR DE LAS LLAMAS  -  Cerebro del jefe (Roblox / Luau)
 -- =====================================================================
@@ -736,6 +822,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Poderes = require(ReplicatedStorage:WaitForChild("Poderes"))
+local Sonidos = require(ReplicatedStorage:WaitForChild("Sonidos"))
 
 -- ---------- CONFIGURACIÓN --------------------------------------------
 local CONFIG = {
@@ -899,6 +986,8 @@ end
 local muerto = false
 local function morir()
 	muerto = true
+	Sonidos.detenerMusica()
+	Sonidos.reproducir("muerte", raiz)
 	print("[SeñorLlamas] ¡El Señor de las Llamas ha sido derrotado!")
 	-- Explosión final espectacular
 	Poderes.novaDeFuego(90, 0)
@@ -922,6 +1011,7 @@ end
 
 -- ---------- BUCLE PRINCIPAL ------------------------------------------
 local activo = false
+local ultimaFase = 1
 task.spawn(function()
 	while not muerto do
 		local objetivo = objetivoEnCiudad()
@@ -929,6 +1019,8 @@ task.spawn(function()
 			if not activo then
 				activo = true
 				print("[SeñorLlamas] ¡Un intruso entró! El demonio despierta. 🔥")
+				Sonidos.reproducir("despertar", raiz)
+				Sonidos.iniciarMusica()
 			end
 			-- Si el jugador está cerca -> ZARPAZO (rango de golpes).
 			-- Si está lejos -> poder a distancia según la fase.
@@ -939,6 +1031,10 @@ task.spawn(function()
 				espera = CONFIG.ESPERA_MELEE
 			else
 				local fase, e = faseActual()
+				if fase ~= ultimaFase then
+					ultimaFase = fase
+					Sonidos.reproducir("fase", raiz)
+				end
 				lanzarPoder(fase, objetivo)
 				espera = e
 			end
@@ -954,6 +1050,7 @@ task.spawn(function()
 			if activo then
 				activo = false
 				print("[SeñorLlamas] La ciudad quedó vacía. El demonio duerme.")
+				Sonidos.detenerMusica()
 			end
 			task.wait(0.4)
 		end
@@ -965,7 +1062,7 @@ task.spawn(function()
 end)
 
 print("[SeñorLlamas] Jefe cargado. Vida: " .. CONFIG.VIDA_MAX .. ". Esperando intrusos...")
-]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX4"><Properties><string name="Name">EspadaInfernal</string><ProtectedString name="Source"><![CDATA[--!strict
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX5"><Properties><string name="Name">EspadaInfernal</string><ProtectedString name="Source"><![CDATA[--!strict
 -- =====================================================================
 --  ESPADA INFERNAL  -  Arma del jugador para pelear al jefe (Luau)
 -- =====================================================================

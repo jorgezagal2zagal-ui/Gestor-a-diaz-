@@ -23,6 +23,7 @@ local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local Sonidos = require(game:GetService("ReplicatedStorage"):WaitForChild("Sonidos"))
 
 local Poderes = {}
 
@@ -171,6 +172,7 @@ local function caerMeteoro(xz: Vector3, dano: number, radio: number)
 end
 
 function Poderes.lluviaDeMeteoros(cantidad: number?, dano: number?, radio: number?)
+	Sonidos.reproducir("meteoro", RAIZ)
 	local n = cantidad or 8
 	local d = dano or 30
 	local r = radio or 14
@@ -189,6 +191,7 @@ end
 --  2. PILARES DE FUEGO
 -- ---------------------------------------------------------------------
 function Poderes.pilaresDeFuego(dano: number?, radio: number?)
+	Sonidos.reproducir("pilares", RAIZ)
 	local d = dano or 35
 	local r = radio or 10
 	for _, obj in objetivosVivos() do
@@ -217,6 +220,7 @@ end
 --  3. NOVA DE FUEGO (onda expansiva gigante)
 -- ---------------------------------------------------------------------
 function Poderes.novaDeFuego(radioMax: number?, dano: number?)
+	Sonidos.reproducir("nova", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local rMax = radioMax or 50
@@ -251,6 +255,7 @@ end
 --  4. RAYO OCULAR (láser que persigue)
 -- ---------------------------------------------------------------------
 function Poderes.rayoOcular(objetivo: BasePart, duracion: number?, danoPorSeg: number?)
+	Sonidos.reproducir("rayo", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local dur = duracion or 2.5
@@ -295,6 +300,7 @@ end
 --  5. BOLAS INFERNALES TELEDIRIGIDAS
 -- ---------------------------------------------------------------------
 function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: number?)
+	Sonidos.reproducir("bolas", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local n = cantidad or 5
@@ -349,6 +355,7 @@ end
 --  6. ERUPCIÓN DE LAVA (géiseres por todo el mapa)
 -- ---------------------------------------------------------------------
 function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
+	Sonidos.reproducir("lava", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local n = cantidad or 14
@@ -385,6 +392,7 @@ end
 --  Daña a los jugadores que estén EN FRENTE del demonio y dentro del
 --  rango. Es el "rango de golpes" para cuando te le acercas.
 function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
+	Sonidos.reproducir("zarpazo", RAIZ)
 	if not RAIZ then return end
 	local raiz = RAIZ :: BasePart
 	local d = dano or 35
@@ -425,6 +433,7 @@ end
 --  7. METEORO COLOSAL (ataque final — brutal)
 -- ---------------------------------------------------------------------
 function Poderes.meteoroColosal(dano: number?, radio: number?)
+	Sonidos.reproducir("colosal", RAIZ)
 	local objetivos = objetivosVivos()
 	if #objetivos == 0 then return end
 	local d = dano or 90
