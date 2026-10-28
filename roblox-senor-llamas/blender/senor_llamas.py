@@ -278,12 +278,95 @@ def alas():
     un_ala(-1)
 
 
+def cuernos(cz):
+    """Dos cuernos curvos saliendo de la cabeza."""
+    for lado in (-1, 1):
+        for seg in range(5):           # cuerno segmentado que se curva
+            t = seg / 4.0
+            bpy.ops.mesh.primitive_cone_add(
+                vertices=8, radius1=0.35 * (1 - t) + 0.05, radius2=0.28 * (1 - t) + 0.02,
+                depth=0.9,
+                location=(lado * (0.9 + t * 1.6), -0.3 + t * 0.9, cz + 1.0 + t * 2.4))
+            cu = bpy.context.active_object
+            cu.name = "Cuerno"
+            cu.rotation_euler = (math.radians(-40 - t * 30), 0, math.radians(lado * (15 + t * 25)))
+            poner_material(cu, MAT_CORONA)
+            suavizar(cu)
+            add(cu)
+
+
+def espinazo():
+    """Cresta de espinas por la espalda del torso."""
+    for i in range(8):
+        z = Z_BASE + 3.0 - i * 1.0
+        esc = 1.0 - i * 0.07
+        bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.3 * esc, radius2=0.0,
+                                        depth=1.3 * esc, location=(0, 1.3, z))
+        e = bpy.context.active_object
+        e.name = f"Espina_{i}"
+        e.rotation_euler = (math.radians(-110), 0, 0)
+        poner_material(e, MAT_CORONA)
+        add(e)
+
+
+def hombreras():
+    """Picos grandes sobre los hombros."""
+    for lado in (-1, 1):
+        for d in (0, 1):
+            bpy.ops.mesh.primitive_cone_add(vertices=7, radius1=0.5 - d * 0.15, radius2=0.0,
+                                            depth=2.2 - d * 0.5,
+                                            location=(lado * (2.2 + d * 0.5), 0.3, Z_BASE + 3.2 + d * 0.6))
+            h = bpy.context.active_object
+            h.name = "Hombrera"
+            h.rotation_euler = (math.radians(20), 0, math.radians(lado * (35 + d * 15)))
+            poner_material(h, MAT_CORONA)
+            suavizar(h)
+            add(h)
+
+
+def tendones_base():
+    """Tiras/harapos oscuros que cuelgan de la cadera hacia la ciudad."""
+    for i in range(14):
+        ang = (i / 14) * math.tau
+        r = 2.6 + random.uniform(-0.3, 0.4)
+        largo = random.uniform(3.0, 6.5)
+        x, y = math.cos(ang) * r, math.sin(ang) * r
+        bpy.ops.mesh.primitive_cone_add(vertices=5, radius1=0.35, radius2=0.05,
+                                        depth=largo, location=(x, y, Z_BASE - 6.0 - largo * 0.3))
+        t = bpy.context.active_object
+        t.name = f"Tendon_{i}"
+        t.rotation_euler = (math.radians(180 + random.uniform(-12, 12)),
+                            random.uniform(-0.1, 0.1), ang)
+        poner_material(t, MAT_ALA)
+        add(t)
+
+
+def brasas_flotantes():
+    """Pequeñas esferas de fuego flotando alrededor del demonio."""
+    for _ in range(30):
+        ang = random.uniform(0, math.tau)
+        r = random.uniform(3, 10)
+        x, y = math.cos(ang) * r, math.sin(ang) * r
+        z = Z_BASE + random.uniform(-4, 8)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=random.uniform(0.12, 0.35), location=(x, y, z))
+        b = bpy.context.active_object
+        b.name = "Brasa"
+        bpy.ops.object.shade_smooth()
+        poner_material(b, MAT_ORBE)
+        add(b)
+
+
 # Construir monstruo
 torso()
 cab, cz = cabeza()
+cuernos(cz)
+espinazo()
+hombreras()
 halo_de_orbes(cz)
 brazos()
 alas()
+tendones_base()
+brasas_flotantes()
 
 for p in piezas_monstruo:
     mover_a_coleccion(p, "SEÑOR_DE_LAS_LLAMAS")

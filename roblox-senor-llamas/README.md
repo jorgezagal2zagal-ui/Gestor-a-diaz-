@@ -15,9 +15,10 @@ Cuando un jugador entra a la ciudad, **el demonio despierta y lo ataca**.
 ```
 roblox-senor-llamas/
 ├── blender/
-│   └── senor_llamas.py        → genera el monstruo + la ciudad en Blender
+│   └── senor_llamas.py        → genera el monstruo (detallado) + ciudad en Blender
 └── roblox/
-    └── DemonLordAI.server.lua → zona de la ciudad + IA de ataque (Luau)
+    ├── DemonLordAI.server.lua → cerebro del jefe: zona, fases, vida (Luau)
+    └── Poderes.lua            → poderes brutales con efectos (ModuleScript)
 ```
 
 ---
@@ -55,11 +56,43 @@ roblox-senor-llamas/
 3. Propiedades: **Anchored = true**, **CanCollide = false**, **Transparency = 1**
    (invisible, solo es el "disparador" de la zona).
 
-### c) Poner el script
-1. Abre **ServerScriptService**.
-2. Inserta un **Script** (no LocalScript).
-3. Copia TODO el contenido de `roblox/DemonLordAI.server.lua` dentro.
-4. **Play** ▶ y camina hacia la ciudad: el demonio te mira y te lanza fuego. 🔥
+### c) Poner los scripts
+1. En **ReplicatedStorage** inserta un **ModuleScript**, renómbralo **`Poderes`**
+   y pega TODO el contenido de `roblox/Poderes.lua`.
+2. En **ServerScriptService** inserta un **Script** (no LocalScript) y pega
+   TODO el contenido de `roblox/DemonLordAI.server.lua`.
+3. **Play** ▶ y camina hacia la ciudad: el demonio despierta y te ataca. 🔥
+
+> El Script carga el ModuleScript con `require(ReplicatedStorage.Poderes)`, así que
+> **ambos** tienen que existir con esos nombres exactos.
+
+---
+
+## 🔥 PODERES BRUTALES (ya incluidos)
+
+El jefe tiene **vida (5000)**, **barra de jefe** y **3 fases** que se vuelven más
+salvajes mientras le bajas la vida:
+
+| Poder | Qué hace |
+|-------|----------|
+| 🌠 **Lluvia de meteoros** | Meteoros caen del cielo sobre los jugadores (marca de aviso + explosión) |
+| 🔥 **Pilares de fuego** | Columnas de fuego erupcionan bajo tus pies |
+| 💥 **Nova de fuego** | Onda expansiva gigante desde el demonio (daño + empuje) |
+| 👁️ **Rayo ocular** | Láser de los ojos que te persigue y quema |
+| ☄️ **Bolas infernales** | Bolas de fuego teledirigidas que te cazan |
+| 🌋 **Erupción de lava** | Géiseres de lava por todo el mapa |
+| ☠️ **METEORO COLOSAL** | Ataque final (fase 3): meteoro de 40 studs, devastador |
+
+**Fases:**
+- **Fase 1** (100–66% vida): bolas, rayo, nova.
+- **Fase 2** (66–33%): agrega meteoros y pilares, más rápido.
+- **Fase 3** (33–0%): modo furia — lava, meteoro colosal, ataca casi sin parar.
+- **Al morir:** nova + erupción final y se desvanece.
+
+### ¿Cómo le hago daño al jefe?
+En tus armas/proyectiles del jugador, ponle un **Attribute numérico llamado `DanoArma`**
+a la Part que golpea (p.ej. `espada:SetAttribute("DanoArma", 50)`). Cuando toque al
+demonio, le resta esa cantidad de vida automáticamente.
 
 ---
 
@@ -84,9 +117,10 @@ roblox-senor-llamas/
 ---
 
 ## 🚀 Siguientes pasos (si quieres, te los armo)
-- Barra de **vida del jefe** y que puedas derrotarlo.
-- **Fase 2** (más agresivo con poca vida).
-- Animaciones de brazos/alas.
-- Efectos de partículas de fuego reales en las bolas.
+- **Rig (esqueleto)** del monstruo en Blender para animar brazos y alas (Rigify).
+- **Animaciones** de ataque (alzar brazos al lanzar meteoros, batir alas).
+- **Sonidos** épicos (rugidos, impactos, música de jefe).
+- **Recompensa** al derrotarlo (ítem, badge, puntos).
+- Afinar **daño/vida** para que la pelea quede justa.
 
 Dime cuál sigue y lo agrego. 💪
