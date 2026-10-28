@@ -84,6 +84,13 @@ local function vestir(parte: BasePart, nombre: string, modo: string): BasePart?
 			local k = math.max(sz.Y, sz.Z) / base.X
 			m.Size = base * math.max(k, 0.05)
 			m.CFrame = CFrame.new(parte.Position + Vector3.new(0, m.Size.Y * 0.35, 0))
+		elseif modo == "proyectil" then
+			-- misma orientación que la Part (vuela hacia su LookVector), escala por el largo Z
+			m.Size = base * (sz.Z / base.Z)
+			m.CFrame = parte.CFrame
+		elseif modo == "uniforme" then
+			m.Size = base * (sz.Y / base.Y)
+			m.CFrame = CFrame.new(parte.Position) * CFrame.Angles(0, girar, 0)
 		else -- plano
 			m.Size = Vector3.new(sz.X, sz.Y, base.Z * sz.X / base.X)
 			m.CFrame = parte.CFrame
@@ -501,6 +508,120 @@ function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
 				obj.AssemblyLinearVelocity = haciaObj * 60 + Vector3.new(0, 30, 0)
 			end
 		end
+	end
+end
+
+-- ---------------------------------------------------------------------
+--  8. LLUVIA DE PLUMAS (plumas de fuego que salen de las alas)
+-- ---------------------------------------------------------------------
+function Poderes.plumasDeFuego(cantidad: number?, dano: number?)
+	Sonidos.reproducir("bolas", RAIZ)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local n = cantidad or 14
+	local d = dano or 14
+	local objetivos = objetivosVivos()
+	if #objetivos == 0 then return end
+	local alas = {}
+	for _, nom in { "AlaIzq", "AlaDer" } do
+		local a = DEMONIO and DEMONIO:FindFirstChild(nom)
+		if a and a:IsA("BasePart") then table.insert(alas, a) end
+	end
+	task.spawn(function()
+		task.wait(0.45) -- espera a que abra las alas
+		for i = 1, n do
+			local ala = alas[(i % math.max(#alas, 1)) + 1]
+			local origen = ala and (ala.Position + Vector3.new(0, math.random(-4, 6), 0)) or (raiz.Position + Vector3.new(0, 10, 0))
+			local objetivo = objetivos[math.random(1, #objetivos)]
+			if not objetivo.Parent then continue end
+			local apunta = objetivo.Position + Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))
+			local pluma = Instance.new("Part")
+			pluma.Anchored = true
+			pluma.CanCollide = false
+			pluma.CanQuery = false
+			pluma.Size = Vector3.new(1.4, 0.4, 6)
+			pluma.Material = Enum.Material.Neon
+			pluma.Color = NARANJA
+			pluma.CFrame = CFrame.lookAt(origen, apunta)
+			emisorFuego(1.2, 25).Parent = pluma
+			luzFuego(3, 12).Parent = pluma
+			pluma.Parent = Workspace
+			local vPluma = vestir(pluma, "FX_Pluma", "proyectil")
+			task.spawn(function()
+				local vel = 95
+				local tt = 0
+				while tt < 3 and pluma.Parent do
+					local dt = RunService.Heartbeat:Wait()
+					tt += dt
+					local nuevo = pluma.Position + pluma.CFrame.LookVector * vel * dt
+					pluma.CFrame = CFrame.lookAt(nuevo, nuevo + pluma.CFrame.LookVector)
+					local golpe = false
+					for _, o in objetivosVivos() do
+						if (o.Position - nuevo).Magnitude < 4.5 then
+							local hum = o.Parent and o.Parent:FindFirstChildOfClass("Humanoid")
+							if hum then hum:TakeDamage(d) end
+							golpe = true
+						end
+					end
+					if golpe or nuevo.Y < sueloY() + 0.5 then
+						danarEnRadio(nuevo, 5, d * 0.5, 15)
+						break
+					end
+				end
+				pluma.Transparency = 1
+				if vPluma then vPluma.Transparency = 1 end
+				Debris:AddItem(pluma, 0.15)
+			end)
+			task.wait(0.07)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------
+--  9. JUICIO CELESTIAL (espada gigante de fuego cae del cielo)
+-- ---------------------------------------------------------------------
+function Poderes.juicioCeleste(dano: number?, radio: number?)
+	Sonidos.reproducir("colosal", RAIZ)
+	local objetivos = objetivosVivos()
+	if #objetivos == 0 then return end
+	local d = dano or 70
+	local r = radio or 18
+	for _, obj in objetivos do
+		local pos = Vector3.new(obj.Position.X, sueloY(), obj.Position.Z)
+		marcaDeAdvertencia(pos + Vector3.new(0, 0.2, 0), r, 1.5)
+		task.delay(1.2, function()
+			local espada = Instance.new("Part")
+			espada.Anchored = true
+			espada.CanCollide = false
+			espada.CanQuery = false
+			espada.Size = Vector3.new(12, 42, 4)
+			espada.Material = Enum.Material.Neon
+			espada.Color = NARANJA
+			local inicio = pos + Vector3.new(0, 220, 0)
+			local fin = pos + Vector3.new(0, 16, 0)
+			espada.CFrame = CFrame.new(inicio)
+			emisorFuego(10, 120).Parent = espada
+			luzFuego(15, 80).Parent = espada
+			espada.Parent = Workspace
+			local vEspada = vestir(espada, "FX_EspadaJuicio", "uniforme")
+			local tt, dur = 0, 0.32
+			while tt < dur do
+				local dt = RunService.Heartbeat:Wait()
+				tt += dt
+				espada.CFrame = CFrame.new(inicio:Lerp(fin, math.min(tt / dur, 1)))
+			end
+			local exp = Instance.new("Explosion")
+			exp.Position = pos
+			exp.BlastRadius = r
+			exp.BlastPressure = 0
+			exp.DestroyJointRadiusPercent = 0
+			exp.Parent = Workspace
+			danarEnRadio(pos + Vector3.new(0, 3, 0), r, d, 80)
+			-- queda clavada ardiendo un momento
+			task.wait(1.4)
+			TweenService:Create(vEspada or espada, TweenInfo.new(0.6), { Transparency = 1 }):Play()
+			Debris:AddItem(espada, 0.7)
+		end)
 	end
 end
 

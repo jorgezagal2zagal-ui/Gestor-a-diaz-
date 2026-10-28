@@ -1666,6 +1666,125 @@ def main_kit():
         log("  FBX + blend del kit guardados")
     log("LISTO")
 
+
+# =====================================================================
+#  PODERES EXTRA: jefe (plumas, espada del juicio) y jugador (luz dorada)
+#  Frente de los proyectiles = -Y (en Roblox queda en LookVector).
+# =====================================================================
+def fx2_objects(M):
+    luz = mat_simple("M_LuzSagrada", (1.0, 0.78, 0.38), emit=(1.0, 0.72, 0.3), estr=4.0)
+    luz2 = mat_simple("M_LuzSuave", (1.0, 0.55, 0.18), rough=0.3, metal=0.4, glow_emit=(1.0, 0.8, 0.4), glow_str=5.0)
+    obs = []
+    rnd = random.Random(77)
+    # Pluma de fuego (proyectil del jefe)
+    mb = MB()
+    pts = [V((0, 3.2, 0)), V((0.15, 1.0, 0.1)), V((0.3, -1.2, 0.25)), V((0.2, -3.2, 0.35))]
+    loft(mb, smooth_path(pts, 12), lambda u: 1.0 * (min(1.0, (u + 0.1) * 2.5) ** 0.5) * max(0.0, 1 - u ** 3) ** 0.5 + 0.03,
+         sides=6, flat=0.15, up=(0, 0, 1), mat=0, glow=lambda u: 0.35 + 0.65 * u)
+    loft(mb, [V((0, 3.6, 0)), V((0, -2.8, 0.3))], [0.12, 0.08], sides=5, mat=1, tip=False, glow=lambda u: 1.0)
+    obs.append(mb.to_object("FX_Pluma", [M["pluma"], M["fuego"]]))
+    # Espada del Juicio (cae del cielo, punta hacia abajo)
+    mb = MB()
+    up = V((0, 1, 0))
+    blade = [V((0, 0, 14 - 32 * i / 40)) for i in range(41)]
+    loft(mb, blade, lambda u: (3.2 * (1 - u ** 1.7) + 0.1) * (1 + 0.14 * math.sin(u * 26)), sides=6, flat=0.18,
+         up=up, mat=0, tip=True, glow=lambda u: 1.0)
+    for sx in (1, -1):
+        g = [V((0, 0, 14.5)), V((sx * 3.5, 0, 15.5)), V((sx * 7.0, 0, 17.5)), V((sx * 8.5, 0, 21.0))]
+        loft(mb, smooth_path(g, 10), lambda u: 1.1 * (1 - u) + 0.1, sides=7, flat=0.6, up=up, mat=1, glow=lambda u: u)
+    ellipsoid(mb, (0, 0, 14.6), (2.0, 1.4, 1.2), seg=14, rings=8, mat=1)
+    loft(mb, [V((0, 0, 15)), V((0, 0, 22))], [0.8, 0.8], sides=8, mat=1, tip=False)
+    ellipsoid(mb, (0, 0, 22.8), (1.3, 1.3, 1.3), seg=12, rings=8, mat=2, glow=1.0)
+    obs.append(mb.to_object("FX_EspadaJuicio", [M["fuego"], M["oro"], M["ojo"]]))
+    # Orbe Sagrado (jugador)
+    mb = MB()
+
+    def ob_def(p):
+        return p * (1 + 0.08 * noise.noise(p * 2.5))
+    ellipsoid(mb, (0, 0, 0), (1.0, 1.0, 1.0), seg=20, rings=12, mat=0, deform=ob_def, glow=1.0)
+    for k in range(3):
+        R = Matrix.Rotation(math.radians(60 * k), 3, 'Y') @ Matrix.Rotation(math.radians(70), 3, 'X')
+        torus(mb, (0, 0, 0), 1.55, 0.07, R, seg=40, sides=5, mat=1, glow=1.0)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        b = V((math.cos(a) * 0.5, 0.6, math.sin(a) * 0.5))
+        loft(mb, smooth_path([b, b + V((math.cos(a) * 0.3, 1.5, math.sin(a) * 0.3)), b + V((0, 3.2, 0))], 6),
+             lambda u: 0.32 * (1 - u), sides=5, mat=0, glow=lambda u: 1.0)
+    obs.append(mb.to_object("JUG_Orbe", [luz, luz2]))
+    # Escudo de llamas (jaula esferica)
+    mb = MB()
+    for k in range(6):
+        R = Matrix.Rotation(math.radians(30 * k), 3, 'Z') @ Matrix.Rotation(math.radians(90), 3, 'X')
+        torus(mb, (0, 0, 0), 4.0, 0.08, R, seg=48, sides=5, mat=0, glow=1.0)
+    for z in (-2.6, 0.0, 2.6):
+        rr = math.sqrt(16 - z * z)
+        torus(mb, (0, 0, z), rr, 0.1, Matrix.Identity(3), seg=48, sides=5, mat=0, glow=1.0)
+    for k in range(12):
+        a = 2 * math.pi * k / 12
+        ellipsoid(mb, (math.cos(a) * 4.0, math.sin(a) * 4.0, 0), (0.28, 0.28, 0.28), seg=8, rings=6, mat=1, glow=1.0)
+    obs.append(mb.to_object("JUG_Escudo", [luz2, luz]))
+    # Tajo Ardiente (media luna horizontal, curvada hacia el frente -Y)
+    mb = MB()
+    pts = [V((math.sin(a) * 5.0, -math.cos(a) * 5.0 + 4.0, 0)) for a in [math.radians(x) for x in range(-75, 76, 6)]]
+    loft(mb, pts, lambda u: 1.0 * math.sin(math.pi * u) + 0.05, sides=6, flat=0.14, up=(0, 0, 1), mat=0, tip=True,
+         glow=lambda u: 1.0)
+    obs.append(mb.to_object("JUG_Tajo", [luz]))
+    # Estrella Caida (ultimate: estrella con estela hacia arriba)
+    mb = MB()
+    ellipsoid(mb, (0, 0, 0), (1.6, 1.6, 1.6), seg=18, rings=10, mat=0, glow=1.0)
+    for k in range(14):
+        z = rnd.uniform(-1, 1)
+        a = rnd.uniform(0, 2 * math.pi)
+        d = V((math.cos(a) * math.sqrt(1 - z * z), math.sin(a) * math.sqrt(1 - z * z), z))
+        loft(mb, [d * 1.4, d * rnd.uniform(3.0, 4.5)], lambda u: 0.55 * (1 - u) + 0.02, sides=5, mat=1, glow=lambda u: 1.0)
+    for k in range(8):
+        a = 2 * math.pi * k / 8
+        b = V((math.cos(a) * 0.9, math.sin(a) * 0.9, 1.0))
+        loft(mb, smooth_path([b, b + V((math.cos(a) * 0.4, math.sin(a) * 0.4, 3.0)), b + V((0, 0, rnd.uniform(7, 10)))], 7),
+             lambda u: 0.7 * (1 - u), sides=5, mat=0, glow=lambda u: 1.0)
+    obs.append(mb.to_object("JUG_Estrella", [luz, luz2]))
+    for o in obs:
+        o.location = (0, 0, 0)
+    return obs
+
+
+def main_fx2():
+    log("MODO poderes extra")
+    reset_scene()
+    M = build_materials()
+    obs = fx2_objects(M)
+    xs = -40
+    for o in obs:
+        limit_tris(o)
+        c, mn, mx = bbox_center(o)
+        log("  %-16s %6d tris  %.1f x %.1f x %.1f" % (o.name, tri_count(o), mx.x - mn.x, mx.y - mn.y, mx.z - mn.z))
+    for o in obs:
+        o.location = (xs, 0, 20)
+        c, mn, mx = bbox_center(o)
+        xs += (mx.x - mn.x) + 6
+    cam = setup_render("EEVEE")
+    render(os.path.join(OUT, "render_poderes_extra.png"), cam, (5, -90, 30), (5, 0, 20))
+    if MODE == "fx2":
+        texdir = os.path.join(OUT, "texturas_fx2")
+        os.makedirs(texdir, exist_ok=True)
+        for o in obs:
+            bake_object(o, 512 if o.name in ("FX_EspadaJuicio", "JUG_Escudo") else 256, texdir)
+        for o in obs:
+            o.location = (0, 0, 0)
+        for o in bpy.context.scene.objects:
+            o.select_set(False)
+        for o in obs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = obs[0]
+        bpy.ops.export_scene.fbx(
+            filepath=os.path.join(OUT, "Poderes_Extra.fbx"), use_selection=True, object_types={'MESH'},
+            global_scale=1.0, apply_unit_scale=True, apply_scale_options='FBX_SCALE_ALL',
+            bake_space_transform=True, mesh_smooth_type='FACE', add_leaf_bones=False, bake_anim=False,
+            path_mode='COPY', embed_textures=True, axis_forward='-Z', axis_up='Y')
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "Poderes_Extra.blend"))
+        log("  FBX + blend de poderes extra guardados")
+    log("LISTO")
+
 # ---------------------------------------------------------------------
 #  MAIN
 # ---------------------------------------------------------------------
@@ -1778,6 +1897,8 @@ def main():
 try:
     if MODE.startswith("kit"):
         main_kit()
+    elif MODE.startswith("fx2"):
+        main_fx2()
     else:
         main()
 except Exception:

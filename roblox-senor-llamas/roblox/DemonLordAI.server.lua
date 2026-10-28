@@ -54,6 +54,14 @@ assert(raiz, "El Model '" .. CONFIG.NOMBRE_DEMONIO .. "' necesita un PrimaryPart
 
 Poderes.configurar(demonio, raiz)
 
+-- Avisa a las animaciones (AnimacionesJefe) qué está haciendo el jefe.
+local function marcar(nombre: string)
+	demonio:SetAttribute("Ataque", nombre)
+	demonio:SetAttribute("AtaqueN", ((demonio:GetAttribute("AtaqueN") or 0) :: number) + 1)
+end
+demonio:SetAttribute("Despierto", false)
+demonio:SetAttribute("Muerto", false)
+
 -- ---------- VIDA DEL JEFE + BARRA ------------------------------------
 local vida = Instance.new("NumberValue")
 vida.Name = "VidaJefe"
@@ -156,13 +164,14 @@ local function lanzarPoder(fase: number, objetivo: BasePart)
 	-- Cada fase abre ataques nuevos y más brutales.
 	local opciones
 	if fase == 1 then
-		opciones = { "bolas", "rayo", "nova" }
+		opciones = { "bolas", "rayo", "nova", "plumas" }
 	elseif fase == 2 then
-		opciones = { "bolas", "rayo", "nova", "meteoros", "pilares" }
+		opciones = { "bolas", "rayo", "nova", "meteoros", "pilares", "plumas", "juicio" }
 	else
-		opciones = { "meteoros", "pilares", "lava", "nova", "rayo", "colosal" }
+		opciones = { "meteoros", "pilares", "lava", "nova", "rayo", "colosal", "plumas", "juicio" }
 	end
 	local elegido = opciones[math.random(1, #opciones)]
+	marcar(elegido)
 
 	if elegido == "bolas" then
 		Poderes.bolasInfernales(5 + fase, 22)
@@ -178,6 +187,10 @@ local function lanzarPoder(fase: number, objetivo: BasePart)
 		Poderes.erupcionDeLava(16, 28)
 	elseif elegido == "colosal" then
 		Poderes.meteoroColosal(90, 45)
+	elseif elegido == "plumas" then
+		Poderes.plumasDeFuego(10 + fase * 4, 12 + fase * 2)
+	elseif elegido == "juicio" then
+		Poderes.juicioCeleste(60 + fase * 10, 18)
 	end
 	return elegido
 end
@@ -186,6 +199,7 @@ end
 local muerto = false
 local function morir()
 	muerto = true
+	demonio:SetAttribute("Muerto", true)
 	Sonidos.detenerMusica()
 	Sonidos.reproducir("muerte", raiz)
 	print("[SeñorLlamas] ¡El Señor de las Llamas ha sido derrotado!")
@@ -197,11 +211,10 @@ local function morir()
 	exp.BlastRadius = 60
 	exp.BlastPressure = 0
 	exp.Parent = Workspace
-	task.wait(0.4)
+	task.wait(3) -- deja ver cómo cae (AnimacionesJefe + VueloJefe)
 	-- Se desvanece
 	for _, p in demonio:GetDescendants() do
 		if p:IsA("BasePart") then
-			p.Anchored = true
 			game:GetService("TweenService"):Create(
 				p, TweenInfo.new(1.5), { Transparency = 1 }
 			):Play()
@@ -218,6 +231,7 @@ task.spawn(function()
 		if objetivo and vida.Value > 0 then
 			if not activo then
 				activo = true
+				demonio:SetAttribute("Despierto", true)
 				print("[SeñorLlamas] ¡Un intruso entró! El demonio despierta. 🔥")
 				Sonidos.reproducir("despertar", raiz)
 				Sonidos.iniciarMusica()
@@ -228,6 +242,8 @@ task.spawn(function()
 			local dv = objetivo.Position - raiz.Position
 			local dist = Vector3.new(dv.X, 0, dv.Z).Magnitude  -- horizontal: el jefe es gigante
 			if dist <= CONFIG.RANGO_MELEE then
+				marcar("melee")
+				task.wait(0.35) -- se ve venir el espadazo
 				Poderes.zarpazo(CONFIG.DANO_MELEE, CONFIG.RANGO_MELEE, 120)
 				espera = CONFIG.ESPERA_MELEE
 			else
@@ -250,6 +266,7 @@ task.spawn(function()
 		else
 			if activo then
 				activo = false
+				demonio:SetAttribute("Despierto", false)
 				print("[SeñorLlamas] La ciudad quedó vacía. El demonio duerme.")
 				Sonidos.detenerMusica()
 			end
