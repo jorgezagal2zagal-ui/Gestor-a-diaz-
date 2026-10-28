@@ -33,7 +33,7 @@ local CONFIG = {
 	GIRO_SUAVE     = 5,        -- qué tan rápido voltea a verte
 
 	-- Rango de golpes cuerpo a cuerpo (zarpazo cuando te le acercas)
-	RANGO_MELEE    = 24,       -- distancia (studs) para que use garras
+	RANGO_MELEE    = 42,       -- distancia (studs, horizontal) para que use garras
 	DANO_MELEE     = 38,       -- daño del zarpazo
 	ESPERA_MELEE   = 1.0,      -- segundos entre zarpazos
 
@@ -64,7 +64,7 @@ local function crearBarraDeVida()
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "BarraJefe"
 	bb.Size = UDim2.new(14, 0, 1.4, 0)
-	bb.StudsOffsetWorldSpace = Vector3.new(0, raiz.Size.Y / 2 + 8, 0)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, (raiz:GetAttribute("AlturaBarra") or (raiz.Size.Y / 2 + 8)) :: number, 0)
 	bb.AlwaysOnTop = true
 	bb.Adornee = raiz
 	bb.Parent = raiz
@@ -225,7 +225,8 @@ task.spawn(function()
 			-- Si el jugador está cerca -> ZARPAZO (rango de golpes).
 			-- Si está lejos -> poder a distancia según la fase.
 			local espera
-			local dist = (objetivo.Position - raiz.Position).Magnitude
+			local dv = objetivo.Position - raiz.Position
+			local dist = Vector3.new(dv.X, 0, dv.Z).Magnitude  -- horizontal: el jefe es gigante
 			if dist <= CONFIG.RANGO_MELEE then
 				Poderes.zarpazo(CONFIG.DANO_MELEE, CONFIG.RANGO_MELEE, 120)
 				espera = CONFIG.ESPERA_MELEE

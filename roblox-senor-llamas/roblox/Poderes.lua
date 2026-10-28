@@ -41,6 +41,68 @@ function Poderes.configurar(demonio: Instance, raiz: BasePart)
 	RAIZ = raiz
 end
 
+-- Altura del piso bajo el jefe (atributo "SueloY" en la raíz; si no, la base de la raíz).
+local function sueloY(): number
+	local r = RAIZ :: BasePart
+	local a = r:GetAttribute("SueloY")
+	if typeof(a) == "number" then return a end
+	return r.Position.Y - r.Size.Y / 2
+end
+
+
+-- ---------------------------------------------------------------------
+--  VISUALES HECHOS EN BLENDER (ReplicatedStorage > FX_Poderes)
+--  Si existen, se "visten" las Parts del poder con la malla y la Part
+--  se vuelve invisible. Si no existen, todo funciona como antes.
+--    modo "esfera"   : malla centrada, escala uniforme según Size.X
+--    modo "vertical" : malla vertical, ancho=Size.X, alto=Size.Y
+--    modo "anillo"   : malla horizontal, diámetro = max(Size.Y, Size.Z)
+--    modo "plano"    : misma orientación que la Part, ancho X, alto Y
+-- ---------------------------------------------------------------------
+local FX_CARPETA = game:GetService("ReplicatedStorage"):FindFirstChild("FX_Poderes")
+local function vestir(parte: BasePart, nombre: string, modo: string): BasePart?
+	local plantilla = FX_CARPETA and FX_CARPETA:FindFirstChild(nombre)
+	if not (plantilla and plantilla:IsA("BasePart")) then return nil end
+	local base = (plantilla :: BasePart).Size
+	local m = (plantilla :: BasePart):Clone()
+	m.Anchored = true
+	m.CanCollide = false
+	m.CanQuery = false
+	m.CanTouch = false
+	m.CastShadow = false
+	local girar = math.random() * math.pi * 2
+	local function ajustar()
+		local sz = parte.Size
+		if modo == "esfera" then
+			local k = sz.X / math.max(base.X, base.Z) * 1.6
+			m.Size = base * k
+			m.CFrame = CFrame.new(parte.Position) * CFrame.Angles(0, girar, 0)
+		elseif modo == "vertical" then
+			m.Size = Vector3.new(base.X * sz.X / base.X, sz.Y, base.Z * sz.X / base.X)
+			m.CFrame = CFrame.new(parte.Position) * CFrame.Angles(0, girar, 0)
+		elseif modo == "anillo" then
+			local k = math.max(sz.Y, sz.Z) / base.X
+			m.Size = base * math.max(k, 0.05)
+			m.CFrame = CFrame.new(parte.Position + Vector3.new(0, m.Size.Y * 0.35, 0))
+		else -- plano
+			m.Size = Vector3.new(sz.X, sz.Y, base.Z * sz.X / base.X)
+			m.CFrame = parte.CFrame
+		end
+	end
+	ajustar()
+	m.Parent = parte
+	parte.Transparency = 1
+	local con
+	con = RunService.Heartbeat:Connect(function()
+		if not parte.Parent then
+			con:Disconnect()
+			return
+		end
+		ajustar()
+	end)
+	return m
+end
+
 -- ---------------------------------------------------------------------
 --  HELPERS DE EFECTOS
 -- ---------------------------------------------------------------------
@@ -146,6 +208,7 @@ local function caerMeteoro(xz: Vector3, dano: number, radio: number)
 	emisorFuego(9, 60).Parent = meteoro
 	luzFuego(8, 30).Parent = meteoro
 	meteoro.Parent = Workspace
+	local vMeteoro = vestir(meteoro, "FX_Meteoro", "esfera")
 
 	marcaDeAdvertencia(Vector3.new(xz.X, xz.Y + 0.2, xz.Z), radio, 0.8)
 
@@ -167,6 +230,7 @@ local function caerMeteoro(xz: Vector3, dano: number, radio: number)
 		exp.Parent = Workspace
 		danarEnRadio(destino, radio, dano, 40)
 		meteoro.Transparency = 1
+		if vMeteoro then vMeteoro.Transparency = 1 end
 		Debris:AddItem(meteoro, 0.2)
 	end)
 end
@@ -209,8 +273,9 @@ function Poderes.pilaresDeFuego(dano: number?, radio: number?)
 			emisorFuego(r, 120).Parent = pilar
 			luzFuego(10, 40).Parent = pilar
 			pilar.Parent = Workspace
+			local vPilar = vestir(pilar, "FX_Pilar", "vertical")
 			danarEnRadio(pos, r, d, 55)
-			TweenService:Create(pilar, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+			TweenService:Create(vPilar or pilar, TweenInfo.new(0.5), { Transparency = 1 }):Play()
 			Debris:AddItem(pilar, 0.6)
 		end)
 	end
@@ -230,25 +295,27 @@ function Poderes.novaDeFuego(radioMax: number?, dano: number?)
 	onda.CanCollide = false
 	onda.CanQuery = false
 	onda.Shape = Enum.PartType.Cylinder
-	onda.CFrame = CFrame.new(raiz.Position - Vector3.new(0, raiz.Size.Y / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	local centroPiso = Vector3.new(raiz.Position.X, sueloY() + 1, raiz.Position.Z)
+	onda.CFrame = CFrame.new(centroPiso) * CFrame.Angles(0, 0, math.rad(90))
 	onda.Size = Vector3.new(2, 2, 2)
 	onda.Material = Enum.Material.Neon
 	onda.Color = AMARILLO
 	onda.Transparency = 0.1
 	luzFuego(12, rMax).Parent = onda
 	onda.Parent = Workspace
+	local vOnda = vestir(onda, "FX_Onda", "anillo")
 
 	task.spawn(function()
 		local pasos = 24
 		for i = 1, pasos do
 			local f = i / pasos
 			onda.Size = Vector3.new(3, rMax * 2 * f, rMax * 2 * f)
-			onda.Transparency = 0.1 + 0.9 * f
+			if vOnda then vOnda.Transparency = 0.9 * f * f else onda.Transparency = 0.1 + 0.9 * f end
 			task.wait(0.02)
 		end
 		onda:Destroy()
 	end)
-	danarEnRadio(raiz.Position, rMax, d, 70)
+	danarEnRadio(centroPiso, rMax, d, 70)
 end
 
 -- ---------------------------------------------------------------------
@@ -315,7 +382,9 @@ function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: nu
 			local bola = Instance.new("Part")
 			bola.Shape = Enum.PartType.Ball
 			bola.Size = Vector3.new(3, 3, 3)
-			bola.Position = raiz.Position + raiz.CFrame.UpVector * 6
+			local mano = DEMONIO and DEMONIO:FindFirstChild("ManoDerecha")
+			bola.Position = (mano and mano:IsA("BasePart")) and (mano :: BasePart).Position
+				or (raiz.Position + raiz.CFrame.UpVector * 6)
 			bola.Material = Enum.Material.Neon
 			bola.Color = NARANJA
 			bola.CanCollide = false
@@ -323,6 +392,7 @@ function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: nu
 			emisorFuego(4, 40).Parent = bola
 			luzFuego(6, 16).Parent = bola
 			bola.Parent = Workspace
+			local vBola = vestir(bola, "FX_BolaFuego", "esfera")
 
 			-- Persigue al objetivo por unos segundos.
 			task.spawn(function()
@@ -344,6 +414,7 @@ function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: nu
 					end
 				end
 				bola.Transparency = 1
+				if vBola then vBola.Transparency = 1 end
 				Debris:AddItem(bola, 0.1)
 			end)
 			task.wait(0.3)
@@ -364,7 +435,7 @@ function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
 		for i = 1, n do
 			local ang = math.random() * math.pi * 2
 			local dist = math.random(10, 70)
-			local centro = raiz.Position + Vector3.new(math.cos(ang) * dist, -4, math.sin(ang) * dist)
+			local centro = Vector3.new(raiz.Position.X + math.cos(ang) * dist, sueloY(), raiz.Position.Z + math.sin(ang) * dist)
 			marcaDeAdvertencia(centro, 8, 0.4)
 			task.delay(0.4, function()
 				local geiser = Instance.new("Part")
@@ -377,8 +448,9 @@ function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
 				emisorFuego(8, 90).Parent = geiser
 				luzFuego(9, 30).Parent = geiser
 				geiser.Parent = Workspace
+				local vGeiser = vestir(geiser, "FX_Geiser", "vertical")
 				danarEnRadio(centro, 9, d, 50)
-				TweenService:Create(geiser, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+				TweenService:Create(vGeiser or geiser, TweenInfo.new(0.5), { Transparency = 1 }):Play()
 				Debris:AddItem(geiser, 0.6)
 			end)
 			task.wait(0.12)
@@ -405,19 +477,22 @@ function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
 	tajo.CanCollide = false
 	tajo.CanQuery = false
 	tajo.Size = Vector3.new(rango_ * 1.6, rango_ * 1.2, 1)
-	tajo.CFrame = raiz.CFrame * CFrame.new(0, 0, -rango_ * 0.5)
+	local baseZ = CFrame.new(raiz.Position.X, sueloY() + rango_ * 0.6, raiz.Position.Z) * raiz.CFrame.Rotation
+	tajo.CFrame = baseZ * CFrame.new(0, 0, -rango_ * 0.5)
 	tajo.Material = Enum.Material.Neon
 	tajo.Color = Color3.fromRGB(255, 90, 30)
 	tajo.Transparency = 0.3
 	emisorFuego(5, 50).Parent = tajo
 	tajo.Parent = Workspace
-	TweenService:Create(tajo, TweenInfo.new(0.3), { Transparency = 1 }):Play()
+	local vTajo = vestir(tajo, "FX_MediaLuna", "plano")
+	TweenService:Create(vTajo or tajo, TweenInfo.new(0.3), { Transparency = 1 }):Play()
 	Debris:AddItem(tajo, 0.35)
 
 	-- Daño solo a quien esté dentro del arco frontal
 	local frente = raiz.CFrame.LookVector
 	for _, obj in objetivosVivos() do
 		local dir = obj.Position - raiz.Position
+		dir = Vector3.new(dir.X, 0, dir.Z)
 		if dir.Magnitude <= rango_ then
 			local haciaObj = (dir.Magnitude > 0.1) and dir.Unit or frente
 			if frente:Dot(haciaObj) >= cosLimite then
@@ -456,6 +531,7 @@ function Poderes.meteoroColosal(dano: number?, radio: number?)
 	emisorFuego(40, 200).Parent = meteoro
 	luzFuego(20, 120).Parent = meteoro
 	meteoro.Parent = Workspace
+	local vColosal = vestir(meteoro, "FX_Meteoro", "esfera")
 
 	task.spawn(function()
 		local destino = Vector3.new(centro.X, centro.Y + 20, centro.Z)
@@ -474,6 +550,7 @@ function Poderes.meteoroColosal(dano: number?, radio: number?)
 		exp.Parent = Workspace
 		danarEnRadio(destino, r, d, 120)
 		meteoro.Transparency = 1
+		if vColosal then vColosal.Transparency = 1 end
 		Debris:AddItem(meteoro, 0.3)
 	end)
 end

@@ -52,6 +52,29 @@ local function parte(props: { [string]: any }): BasePart
 	return p
 end
 
+-- Kit de Blender (ServerStorage > EscenarioKit). Si no existe, se usan cubos.
+local KIT = game:GetService("ServerStorage"):FindFirstChild("EscenarioKit")
+local function pieza(nombre: string): BasePart?
+	local p = KIT and KIT:FindFirstChild(nombre)
+	if p and p:IsA("BasePart") then
+		local c = (p :: BasePart):Clone()
+		c.Anchored = true
+		c.CanCollide = true
+		c.CanQuery = true
+		return c
+	end
+	return nil
+end
+-- Coloca una pieza del kit con la base en el piso, escalada y mirando a 'mirar'.
+local function ponerPieza(c: BasePart, pos: Vector3, mirar: Vector3, escala: Vector3, nombre: string)
+	c.Size = c.Size * escala
+	local p = Vector3.new(pos.X, c.Size.Y / 2 - 0.3, pos.Z)
+	c.CFrame = CFrame.lookAt(p, Vector3.new(mirar.X, p.Y, mirar.Z))
+	c.Name = nombre
+	c.Parent = arena
+	return c
+end
+
 local function emisorFuego(host: BasePart, tamano: number, rate: number)
 	local e = Instance.new("ParticleEmitter")
 	e.Texture = "rbxassetid://243660364"
@@ -77,12 +100,20 @@ parte({
 	Name = "Suelo",
 	Size = Vector3.new(CONFIG.RADIO_CIUDAD * 2 + 80, 2, CONFIG.RADIO_CIUDAD * 2 + 80),
 	Position = Vector3.new(0, -1, 0),
-	Material = Enum.Material.Slate,
-	Color = PIEDRA,
+	Material = KIT and Enum.Material.Basalt or Enum.Material.Slate,
+	Color = KIT and Color3.fromRGB(38, 30, 28) or PIEDRA,
 })
 
 -- ---------- EDIFICIOS (anillo con plaza central) ---------------------
+local VARIANTES = { "Casa_A", "Casa_A", "Casa_B", "Casa_C", "Casa_C", "Torre" }
 local function edificio(x: number, z: number, mirarAlCentro: CFrame)
+	local c = pieza(VARIANTES[math.random(1, #VARIANTES)])
+	if c then
+		local k = 0.9 + math.random() * 0.6
+		local giro = Vector3.new(math.random(-8, 8), 0, math.random(-8, 8))
+		ponerPieza(c, Vector3.new(x, 0, z), giro, Vector3.new(k, k * (0.9 + math.random() * 0.4), k), "Edificio")
+		return
+	end
 	local alto = math.random(14, 42)
 	local ancho = math.random(10, 20)
 	local fondo = math.random(10, 20)
@@ -196,6 +227,13 @@ for i = 1, segmentos do
 	if math.abs(z) < CONFIG.ANCHO_PUERTA / 2 and x > 0 then
 		continue
 	end
+	local seg = pieza("MuroSegmento")
+	if seg then
+		local largo = 2 * math.pi * Rmuro / segmentos + 2
+		local k = largo / seg.Size.X
+		ponerPieza(seg, Vector3.new(x, 0, z), Vector3.zero, Vector3.new(k, (CONFIG.ALTO_MURO + 3) / seg.Size.Y, 1), "Muro")
+		continue
+	end
 	parte({
 		Name = "Muro",
 		Size = Vector3.new(2 * math.pi * Rmuro / segmentos + 2, CONFIG.ALTO_MURO, 6),
@@ -206,6 +244,12 @@ for i = 1, segmentos do
 end
 -- Torres a los lados de la puerta
 for _, signo in { -1, 1 } do
+	local t = pieza("TorrePuerta")
+	if t then
+		ponerPieza(t, Vector3.new(Rmuro, 0, signo * (CONFIG.ANCHO_PUERTA / 2 + 7)), Vector3.new(0, 0, signo * 500),
+			Vector3.new(1.1, (CONFIG.ALTO_MURO + 14) / t.Size.Y, 1.1), "TorrePuerta")
+		continue
+	end
 	parte({
 		Name = "TorrePuerta",
 		Size = Vector3.new(10, CONFIG.ALTO_MURO + 14, 10),
@@ -213,6 +257,20 @@ for _, signo in { -1, 1 } do
 		Material = Enum.Material.Slate,
 		Color = PIEDRA,
 	})
+end
+
+-- ---------- ROCAS DE LAVA Y ÁRBOLES SECOS (kit de Blender) -----------
+if KIT then
+	for i = 1, 28 do
+		local ang = math.random() * math.pi * 2
+		local dist = math.random(CONFIG.RADIO_PLAZA - 8, CONFIG.RADIO_CIUDAD + 8)
+		local c = pieza(i % 3 == 0 and "ArbolSeco" or "RocaLava")
+		if c then
+			local k = 1 + math.random() * 1.4
+			ponerPieza(c, Vector3.new(math.cos(ang) * dist, 0, math.sin(ang) * dist),
+				Vector3.new(math.random(-50, 50), 0, math.random(-50, 50)), Vector3.new(k, k, k), c.Name)
+		end
+	end
 end
 
 -- ---------- SPAWN DE JUGADORES (en la puerta) ------------------------
