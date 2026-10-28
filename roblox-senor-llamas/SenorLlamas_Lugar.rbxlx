@@ -1,0 +1,1058 @@
+<?xml version="1.0" encoding="utf-8"?><roblox version="4"><Item class="Workspace" referent="W"><Properties><string name="Name">Workspace</string></Properties></Item><Item class="ReplicatedStorage" referent="R"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="ModuleScript" referent="RBX1"><Properties><string name="Name">Poderes</string><ProtectedString name="Source"><![CDATA[--!strict
+-- =====================================================================
+--  PODERES DEL SEÑOR DE LAS LLAMAS  (ModuleScript / Luau)
+-- =====================================================================
+--  Poderes BRUTALES y llamativos con efectos (partículas, luz, rayos,
+--  explosiones). Pensado para un jefe final.
+--
+--  DÓNDE VA:  ReplicatedStorage > ModuleScript llamado "Poderes"
+--  LO USA:    DemonLordAI.server.lua lo carga con require().
+--
+--  Ataques incluidos:
+--    1. Lluvia de meteoros        (meteoros caen del cielo)
+--    2. Pilares de fuego          (columnas que erupcionan bajo el jugador)
+--    3. Nova de fuego             (onda expansiva gigante)
+--    4. Rayo ocular               (láser de los ojos que persigue)
+--    5. Bolas infernales teledirigidas
+--    6. Erupción de lava          (géiseres de lava)
+--    7. METEORO COLOSAL           (ataque final devastador)
+-- =====================================================================
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local Poderes = {}
+
+-- Referencias (las setea el AI al arrancar con Poderes.configurar)
+local DEMONIO: Instance? = nil
+local RAIZ: BasePart? = nil
+
+-- Colores de fuego reutilizables
+local NARANJA = Color3.fromRGB(255, 120, 20)
+local AMARILLO = Color3.fromRGB(255, 220, 90)
+local ROJO = Color3.fromRGB(200, 30, 10)
+
+function Poderes.configurar(demonio: Instance, raiz: BasePart)
+	DEMONIO = demonio
+	RAIZ = raiz
+end
+
+-- ---------------------------------------------------------------------
+--  HELPERS DE EFECTOS
+-- ---------------------------------------------------------------------
+
+-- Emisor de partículas de fuego listo para usar.
+local function emisorFuego(tamano: number, rate: number): ParticleEmitter
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxassetid://243660364"  -- textura de humo/fuego estándar de Roblox
+	e.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, AMARILLO),
+		ColorSequenceKeypoint.new(0.5, NARANJA),
+		ColorSequenceKeypoint.new(1, ROJO),
+	})
+	e.LightEmission = 1
+	e.LightInfluence = 0
+	e.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, tamano),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	e.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	e.Lifetime = NumberRange.new(0.4, 0.8)
+	e.Rate = rate
+	e.Speed = NumberRange.new(6, 14)
+	e.SpreadAngle = Vector2.new(25, 25)
+	e.Acceleration = Vector3.new(0, 20, 0)
+	return e
+end
+
+local function luzFuego(brillo: number, rango: number): PointLight
+	local l = Instance.new("PointLight")
+	l.Color = NARANJA
+	l.Brightness = brillo
+	l.Range = rango
+	return l
+end
+
+-- Daña a todos los jugadores dentro de un radio.
+local function danarEnRadio(centro: Vector3, radio: number, dano: number, empuje: number?)
+	for _, jugador in Players:GetPlayers() do
+		local pj = jugador.Character
+		local hum = pj and pj:FindFirstChildOfClass("Humanoid")
+		local hrp = pj and pj:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if hum and hrp and hum.Health > 0 then
+			local dir = hrp.Position - centro
+			if dir.Magnitude <= radio then
+				hum:TakeDamage(dano)
+				if empuje and empuje > 0 then
+					local fuerza = (dir.Magnitude > 0.1 and dir.Unit or Vector3.yAxis)
+					hrp.AssemblyLinearVelocity = fuerza * empuje + Vector3.new(0, empuje * 0.6, 0)
+				end
+			end
+		end
+	end
+end
+
+-- Lista de personajes-objetivo vivos.
+local function objetivosVivos(): { BasePart }
+	local lista = {}
+	for _, jugador in Players:GetPlayers() do
+		local pj = jugador.Character
+		local hum = pj and pj:FindFirstChildOfClass("Humanoid")
+		local hrp = pj and pj:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if hum and hrp and hum.Health > 0 then
+			table.insert(lista, hrp)
+		end
+	end
+	return lista
+end
+
+-- Marca en el suelo que avisa dónde va a caer un ataque (telegrafía).
+local function marcaDeAdvertencia(pos: Vector3, radio: number, duracion: number)
+	local marca = Instance.new("Part")
+	marca.Anchored = true
+	marca.CanCollide = false
+	marca.CanQuery = false
+	marca.Shape = Enum.PartType.Cylinder
+	marca.Size = Vector3.new(0.4, radio * 2, radio * 2)
+	marca.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
+	marca.Material = Enum.Material.Neon
+	marca.Color = ROJO
+	marca.Transparency = 0.5
+	marca.Parent = Workspace
+	TweenService:Create(marca, TweenInfo.new(duracion), { Transparency = 0.15 }):Play()
+	Debris:AddItem(marca, duracion + 0.1)
+end
+
+-- ---------------------------------------------------------------------
+--  1. LLUVIA DE METEOROS
+-- ---------------------------------------------------------------------
+local function caerMeteoro(xz: Vector3, dano: number, radio: number)
+	local inicio = xz + Vector3.new(math.random(-20, 20), 180, math.random(-20, 20))
+	local meteoro = Instance.new("Part")
+	meteoro.Shape = Enum.PartType.Ball
+	meteoro.Size = Vector3.new(8, 8, 8)
+	meteoro.Position = inicio
+	meteoro.Material = Enum.Material.CrackedLava
+	meteoro.Color = ROJO
+	meteoro.Anchored = true
+	meteoro.CanCollide = false
+	emisorFuego(9, 60).Parent = meteoro
+	luzFuego(8, 30).Parent = meteoro
+	meteoro.Parent = Workspace
+
+	marcaDeAdvertencia(Vector3.new(xz.X, xz.Y + 0.2, xz.Z), radio, 0.8)
+
+	task.spawn(function()
+		local destino = Vector3.new(xz.X, xz.Y + 4, xz.Z)
+		local t = 0
+		local duracion = 0.8
+		while t < duracion do
+			local dt = RunService.Heartbeat:Wait()
+			t += dt
+			meteoro.Position = inicio:Lerp(destino, math.min(t / duracion, 1))
+		end
+		-- IMPACTO
+		local exp = Instance.new("Explosion")
+		exp.Position = destino
+		exp.BlastRadius = radio
+		exp.BlastPressure = 0           -- daño manual, sin volar todo sin control
+		exp.DestroyJointRadiusPercent = 0
+		exp.Parent = Workspace
+		danarEnRadio(destino, radio, dano, 40)
+		meteoro.Transparency = 1
+		Debris:AddItem(meteoro, 0.2)
+	end)
+end
+
+function Poderes.lluviaDeMeteoros(cantidad: number?, dano: number?, radio: number?)
+	local n = cantidad or 8
+	local d = dano or 30
+	local r = radio or 14
+	local objetivos = objetivosVivos()
+	if #objetivos == 0 then return end
+	task.spawn(function()
+		for i = 1, n do
+			local obj = objetivos[math.random(1, #objetivos)]
+			caerMeteoro(obj.Position, d, r)
+			task.wait(0.25)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------
+--  2. PILARES DE FUEGO
+-- ---------------------------------------------------------------------
+function Poderes.pilaresDeFuego(dano: number?, radio: number?)
+	local d = dano or 35
+	local r = radio or 10
+	for _, obj in objetivosVivos() do
+		local pos = obj.Position
+		marcaDeAdvertencia(Vector3.new(pos.X, pos.Y - 2.5, pos.Z), r, 0.6)
+		task.delay(0.6, function()
+			local pilar = Instance.new("Part")
+			pilar.Anchored = true
+			pilar.CanCollide = false
+			pilar.Size = Vector3.new(r * 1.6, 60, r * 1.6)
+			pilar.Position = Vector3.new(pos.X, pos.Y + 28, pos.Z)
+			pilar.Material = Enum.Material.Neon
+			pilar.Color = NARANJA
+			pilar.Transparency = 0.25
+			emisorFuego(r, 120).Parent = pilar
+			luzFuego(10, 40).Parent = pilar
+			pilar.Parent = Workspace
+			danarEnRadio(pos, r, d, 55)
+			TweenService:Create(pilar, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+			Debris:AddItem(pilar, 0.6)
+		end)
+	end
+end
+
+-- ---------------------------------------------------------------------
+--  3. NOVA DE FUEGO (onda expansiva gigante)
+-- ---------------------------------------------------------------------
+function Poderes.novaDeFuego(radioMax: number?, dano: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local rMax = radioMax or 50
+	local d = dano or 45
+	local onda = Instance.new("Part")
+	onda.Anchored = true
+	onda.CanCollide = false
+	onda.CanQuery = false
+	onda.Shape = Enum.PartType.Cylinder
+	onda.CFrame = CFrame.new(raiz.Position - Vector3.new(0, raiz.Size.Y / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	onda.Size = Vector3.new(2, 2, 2)
+	onda.Material = Enum.Material.Neon
+	onda.Color = AMARILLO
+	onda.Transparency = 0.1
+	luzFuego(12, rMax).Parent = onda
+	onda.Parent = Workspace
+
+	task.spawn(function()
+		local pasos = 24
+		for i = 1, pasos do
+			local f = i / pasos
+			onda.Size = Vector3.new(3, rMax * 2 * f, rMax * 2 * f)
+			onda.Transparency = 0.1 + 0.9 * f
+			task.wait(0.02)
+		end
+		onda:Destroy()
+	end)
+	danarEnRadio(raiz.Position, rMax, d, 70)
+end
+
+-- ---------------------------------------------------------------------
+--  4. RAYO OCULAR (láser que persigue)
+-- ---------------------------------------------------------------------
+function Poderes.rayoOcular(objetivo: BasePart, duracion: number?, danoPorSeg: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local dur = duracion or 2.5
+	local dps = danoPorSeg or 30
+
+	-- Origen del rayo (ojos): una Part "Ojos" si existe, si no la parte alta de la raíz.
+	local ojos = (DEMONIO and DEMONIO:FindFirstChild("Ojos")) :: BasePart?
+	local a0 = Instance.new("Attachment")
+	a0.Parent = ojos or raiz
+	if not ojos then a0.Position = Vector3.new(0, raiz.Size.Y / 2, -raiz.Size.Z / 2) end
+
+	local a1 = Instance.new("Attachment")
+	a1.Parent = objetivo
+
+	local haz = Instance.new("Beam")
+	haz.Attachment0 = a0
+	haz.Attachment1 = a1
+	haz.Width0 = 2.5
+	haz.Width1 = 1.2
+	haz.Color = ColorSequence.new(AMARILLO, ROJO)
+	haz.LightEmission = 1
+	haz.FaceCamera = true
+	haz.Texture = "rbxassetid://446111271"
+	haz.TextureSpeed = 4
+	haz.Parent = a0
+
+	task.spawn(function()
+		local t = 0
+		while t < dur and objetivo.Parent do
+			local dt = RunService.Heartbeat:Wait()
+			t += dt
+			local hum = objetivo.Parent and objetivo.Parent:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				hum:TakeDamage(dps * dt)
+			end
+		end
+		haz:Destroy(); a0:Destroy(); a1:Destroy()
+	end)
+end
+
+-- ---------------------------------------------------------------------
+--  5. BOLAS INFERNALES TELEDIRIGIDAS
+-- ---------------------------------------------------------------------
+function Poderes.bolasInfernales(cantidad: number?, dano: number?, velocidad: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local n = cantidad or 5
+	local d = dano or 22
+	local vel = velocidad or 55
+	local objetivos = objetivosVivos()
+	if #objetivos == 0 then return end
+
+	task.spawn(function()
+		for i = 1, n do
+			local objetivo = objetivos[math.random(1, #objetivos)]
+			local bola = Instance.new("Part")
+			bola.Shape = Enum.PartType.Ball
+			bola.Size = Vector3.new(3, 3, 3)
+			bola.Position = raiz.Position + raiz.CFrame.UpVector * 6
+			bola.Material = Enum.Material.Neon
+			bola.Color = NARANJA
+			bola.CanCollide = false
+			bola.Anchored = true
+			emisorFuego(4, 40).Parent = bola
+			luzFuego(6, 16).Parent = bola
+			bola.Parent = Workspace
+
+			-- Persigue al objetivo por unos segundos.
+			task.spawn(function()
+				local t = 0
+				local golpeo = false
+				while t < 4 and bola.Parent and not golpeo do
+					local dt = RunService.Heartbeat:Wait()
+					t += dt
+					if objetivo.Parent then
+						local dir = (objetivo.Position - bola.Position)
+						if dir.Magnitude < 4 then
+							local hum = objetivo.Parent:FindFirstChildOfClass("Humanoid")
+							if hum then hum:TakeDamage(d) end
+							danarEnRadio(bola.Position, 6, d * 0.5, 20)
+							golpeo = true
+						else
+							bola.Position += dir.Unit * vel * dt
+						end
+					end
+				end
+				bola.Transparency = 1
+				Debris:AddItem(bola, 0.1)
+			end)
+			task.wait(0.3)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------
+--  6. ERUPCIÓN DE LAVA (géiseres por todo el mapa)
+-- ---------------------------------------------------------------------
+function Poderes.erupcionDeLava(cantidad: number?, dano: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local n = cantidad or 14
+	local d = dano or 28
+	task.spawn(function()
+		for i = 1, n do
+			local ang = math.random() * math.pi * 2
+			local dist = math.random(10, 70)
+			local centro = raiz.Position + Vector3.new(math.cos(ang) * dist, -4, math.sin(ang) * dist)
+			marcaDeAdvertencia(centro, 8, 0.4)
+			task.delay(0.4, function()
+				local geiser = Instance.new("Part")
+				geiser.Anchored = true
+				geiser.CanCollide = false
+				geiser.Size = Vector3.new(10, 40, 10)
+				geiser.Position = centro + Vector3.new(0, 20, 0)
+				geiser.Material = Enum.Material.CrackedLava
+				geiser.Color = Color3.fromRGB(255, 80, 10)
+				emisorFuego(8, 90).Parent = geiser
+				luzFuego(9, 30).Parent = geiser
+				geiser.Parent = Workspace
+				danarEnRadio(centro, 9, d, 50)
+				TweenService:Create(geiser, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+				Debris:AddItem(geiser, 0.6)
+			end)
+			task.wait(0.12)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------
+--  MELEE: ZARPAZO (golpe cuerpo a cuerpo en arco)
+-- ---------------------------------------------------------------------
+--  Daña a los jugadores que estén EN FRENTE del demonio y dentro del
+--  rango. Es el "rango de golpes" para cuando te le acercas.
+function Poderes.zarpazo(dano: number?, rango: number?, anguloGrados: number?)
+	if not RAIZ then return end
+	local raiz = RAIZ :: BasePart
+	local d = dano or 35
+	local rango_ = rango or 22
+	local cosLimite = math.cos(math.rad((anguloGrados or 120) / 2))
+
+	-- VFX: tajo de garra al frente
+	local tajo = Instance.new("Part")
+	tajo.Anchored = true
+	tajo.CanCollide = false
+	tajo.CanQuery = false
+	tajo.Size = Vector3.new(rango_ * 1.6, rango_ * 1.2, 1)
+	tajo.CFrame = raiz.CFrame * CFrame.new(0, 0, -rango_ * 0.5)
+	tajo.Material = Enum.Material.Neon
+	tajo.Color = Color3.fromRGB(255, 90, 30)
+	tajo.Transparency = 0.3
+	emisorFuego(5, 50).Parent = tajo
+	tajo.Parent = Workspace
+	TweenService:Create(tajo, TweenInfo.new(0.3), { Transparency = 1 }):Play()
+	Debris:AddItem(tajo, 0.35)
+
+	-- Daño solo a quien esté dentro del arco frontal
+	local frente = raiz.CFrame.LookVector
+	for _, obj in objetivosVivos() do
+		local dir = obj.Position - raiz.Position
+		if dir.Magnitude <= rango_ then
+			local haciaObj = (dir.Magnitude > 0.1) and dir.Unit or frente
+			if frente:Dot(haciaObj) >= cosLimite then
+				local hum = obj.Parent and obj.Parent:FindFirstChildOfClass("Humanoid")
+				if hum then hum:TakeDamage(d) end
+				obj.AssemblyLinearVelocity = haciaObj * 60 + Vector3.new(0, 30, 0)
+			end
+		end
+	end
+end
+
+-- ---------------------------------------------------------------------
+--  7. METEORO COLOSAL (ataque final — brutal)
+-- ---------------------------------------------------------------------
+function Poderes.meteoroColosal(dano: number?, radio: number?)
+	local objetivos = objetivosVivos()
+	if #objetivos == 0 then return end
+	local d = dano or 90
+	local r = radio or 45
+	-- cae en el promedio de los jugadores (los acorrala)
+	local suma = Vector3.zero
+	for _, o in objetivos do suma += o.Position end
+	local centro = suma / #objetivos
+
+	marcaDeAdvertencia(centro, r, 2.0)
+	local inicio = centro + Vector3.new(0, 350, 0)
+	local meteoro = Instance.new("Part")
+	meteoro.Shape = Enum.PartType.Ball
+	meteoro.Size = Vector3.new(40, 40, 40)
+	meteoro.Position = inicio
+	meteoro.Material = Enum.Material.CrackedLava
+	meteoro.Color = ROJO
+	meteoro.Anchored = true
+	meteoro.CanCollide = false
+	emisorFuego(40, 200).Parent = meteoro
+	luzFuego(20, 120).Parent = meteoro
+	meteoro.Parent = Workspace
+
+	task.spawn(function()
+		local destino = Vector3.new(centro.X, centro.Y + 20, centro.Z)
+		local t = 0
+		local dur = 2.0
+		while t < dur do
+			local dt = RunService.Heartbeat:Wait()
+			t += dt
+			meteoro.Position = inicio:Lerp(destino, math.min(t / dur, 1))
+		end
+		local exp = Instance.new("Explosion")
+		exp.Position = destino
+		exp.BlastRadius = r
+		exp.BlastPressure = 200000
+		exp.DestroyJointRadiusPercent = 0
+		exp.Parent = Workspace
+		danarEnRadio(destino, r, d, 120)
+		meteoro.Transparency = 1
+		Debris:AddItem(meteoro, 0.3)
+	end)
+end
+
+return Poderes
+]]></ProtectedString></Properties></Item></Item><Item class="ServerScriptService" referent="S"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX2"><Properties><string name="Name">CiudadArena</string><ProtectedString name="Source"><![CDATA[--!strict
+-- =====================================================================
+--  CIUDAD ARENA EN LLAMAS  (Roblox / Luau)
+-- =====================================================================
+--  Construye TODO el escenario de combate directo en Roblox, sin Blender:
+--   * suelo de piedra oscura,
+--   * anillo de edificios medievales con una PLAZA central (ahí va el jefe),
+--   * charcos de LAVA que queman al tocarlos,
+--   * fogatas / llamaradas de ambiente,
+--   * muralla exterior con una PUERTA de entrada,
+--   * un SpawnLocation en la puerta (los jugadores entran por ahí),
+--   * la Part "ZonaCiudad" que activa al demonio (la crea automáticamente).
+--
+--  DÓNDE VA:  pega este Script en  ServerScriptService.
+--  Corre UNA vez al iniciar el juego y arma toda la arena.
+--
+--  Coloca tu Model "SenorLlamas" en el CENTRO (0, altura, 0).
+-- =====================================================================
+
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+
+-- ---------- CONFIGURACIÓN --------------------------------------------
+local CONFIG = {
+	RADIO_PLAZA   = 60,    -- radio del claro central (donde pelean)
+	RADIO_CIUDAD  = 170,   -- hasta dónde llegan los edificios
+	ALTO_MURO     = 40,    -- altura de la muralla exterior
+	ANCHO_PUERTA  = 40,    -- hueco de la puerta de entrada
+	DANO_LAVA     = 12,    -- daño por segundo al pisar lava
+}
+-- --------------------------------------------------------------------
+
+local NARANJA = Color3.fromRGB(255, 120, 20)
+local ROJO    = Color3.fromRGB(190, 35, 12)
+local PIEDRA  = Color3.fromRGB(28, 24, 22)
+local TEJADO  = Color3.fromRGB(45, 18, 12)
+
+-- Contenedor para no ensuciar el Workspace
+local arena = Instance.new("Folder")
+arena.Name = "CiudadArena"
+arena.Parent = Workspace
+
+local function parte(props: { [string]: any }): BasePart
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	for k, v in props do
+		(p :: any)[k] = v
+	end
+	p.Parent = arena
+	return p
+end
+
+local function emisorFuego(host: BasePart, tamano: number, rate: number)
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxassetid://243660364"
+	e.Color = ColorSequence.new(Color3.fromRGB(255, 220, 90), ROJO)
+	e.LightEmission = 1
+	e.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, tamano),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	e.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	e.Lifetime = NumberRange.new(0.5, 1.0)
+	e.Rate = rate
+	e.Speed = NumberRange.new(5, 12)
+	e.Acceleration = Vector3.new(0, 18, 0)
+	e.Parent = host
+end
+
+-- ---------- SUELO ----------------------------------------------------
+parte({
+	Name = "Suelo",
+	Size = Vector3.new(CONFIG.RADIO_CIUDAD * 2 + 80, 2, CONFIG.RADIO_CIUDAD * 2 + 80),
+	Position = Vector3.new(0, -1, 0),
+	Material = Enum.Material.Slate,
+	Color = PIEDRA,
+})
+
+-- ---------- EDIFICIOS (anillo con plaza central) ---------------------
+local function edificio(x: number, z: number, mirarAlCentro: CFrame)
+	local alto = math.random(14, 42)
+	local ancho = math.random(10, 20)
+	local fondo = math.random(10, 20)
+
+	-- muros
+	local m = parte({
+		Name = "Edificio",
+		Size = Vector3.new(ancho, alto, fondo),
+		CFrame = CFrame.new(x, alto / 2, z),
+		Material = Enum.Material.Brick,
+		Color = PIEDRA,
+	})
+	-- tejado (prisma)
+	parte({
+		Name = "Tejado",
+		Size = Vector3.new(ancho + 1, ancho * 0.6, fondo + 1),
+		CFrame = CFrame.new(x, alto + ancho * 0.25, z),
+		Material = Enum.Material.Slate,
+		Color = TEJADO,
+	})
+	-- algunas ventanas con brillo de incendio adentro
+	if math.random() < 0.6 then
+		parte({
+			Name = "Ventana",
+			Size = Vector3.new(2.5, 3, 0.4),
+			CFrame = m.CFrame * CFrame.new(0, math.random(-2, 6), -fondo / 2 - 0.1),
+			Material = Enum.Material.Neon,
+			Color = NARANJA,
+		})
+	end
+end
+
+local filas = 0
+local radio = CONFIG.RADIO_PLAZA + 18
+while radio < CONFIG.RADIO_CIUDAD do
+	local circunf = 2 * math.pi * radio
+	local cuantos = math.max(6, math.floor(circunf / 28))
+	for i = 1, cuantos do
+		local ang = (i / cuantos) * math.pi * 2 + filas * 0.3
+		-- deja un hueco para la puerta (hacia +X)
+		if math.abs(math.cos(ang)) > 0.86 and math.sin(ang) > -0.2 and math.sin(ang) < 0.2 and math.cos(ang) > 0 then
+			continue
+		end
+		local x = math.cos(ang) * (radio + math.random(-6, 6))
+		local z = math.sin(ang) * (radio + math.random(-6, 6))
+		edificio(x, z, CFrame.lookAt(Vector3.new(x, 0, z), Vector3.zero))
+	end
+	radio += math.random(26, 34)
+	filas += 1
+end
+
+-- ---------- LAVA (charcos que queman) --------------------------------
+local lavas: { BasePart } = {}
+for _ = 1, 30 do
+	local ang = math.random() * math.pi * 2
+	local dist = math.random(CONFIG.RADIO_PLAZA - 15, CONFIG.RADIO_CIUDAD - 10)
+	local x, z = math.cos(ang) * dist, math.sin(ang) * dist
+	local lava = parte({
+		Name = "Lava",
+		Size = Vector3.new(math.random(10, 28), 1, math.random(10, 28)),
+		Position = Vector3.new(x, 0.1, z),
+		Material = Enum.Material.CrackedLava,
+		Color = Color3.fromRGB(255, 70, 10),
+		CanCollide = false,
+	})
+	table.insert(lavas, lava)
+end
+
+-- Daño por pisar lava (con pequeño enfriamiento por jugador)
+local ultimoDano: { [Humanoid]: number } = {}
+for _, lava in lavas do
+	lava.Touched:Connect(function(hit)
+		local hum = hit.Parent and hit.Parent:FindFirstChildOfClass("Humanoid")
+		if hum and hum.Health > 0 then
+			local ahora = os.clock()
+			if (ultimoDano[hum] == nil) or (ahora - ultimoDano[hum] >= 0.5) then
+				ultimoDano[hum] = ahora
+				hum:TakeDamage(CONFIG.DANO_LAVA * 0.5)
+			end
+		end
+	end)
+end
+
+-- ---------- FOGATAS / LLAMARADAS DE AMBIENTE -------------------------
+for _ = 1, 45 do
+	local ang = math.random() * math.pi * 2
+	local dist = math.random(CONFIG.RADIO_PLAZA, CONFIG.RADIO_CIUDAD)
+	local x, z = math.cos(ang) * dist, math.sin(ang) * dist
+	local foco = parte({
+		Name = "Fogata",
+		Size = Vector3.new(2, 2, 2),
+		Position = Vector3.new(x, 1, z),
+		Transparency = 1,
+		CanCollide = false,
+	})
+	emisorFuego(foco, math.random(3, 7), math.random(25, 55))
+	local luz = Instance.new("PointLight")
+	luz.Color = NARANJA
+	luz.Brightness = 4
+	luz.Range = 22
+	luz.Parent = foco
+end
+
+-- ---------- MURALLA EXTERIOR CON PUERTA ------------------------------
+local Rmuro = CONFIG.RADIO_CIUDAD + 20
+local segmentos = 64
+for i = 1, segmentos do
+	local ang = (i / segmentos) * math.pi * 2
+	-- hueco de la puerta hacia +X
+	local x, z = math.cos(ang) * Rmuro, math.sin(ang) * Rmuro
+	if math.abs(z) < CONFIG.ANCHO_PUERTA / 2 and x > 0 then
+		continue
+	end
+	parte({
+		Name = "Muro",
+		Size = Vector3.new(2 * math.pi * Rmuro / segmentos + 2, CONFIG.ALTO_MURO, 6),
+		CFrame = CFrame.lookAt(Vector3.new(x, CONFIG.ALTO_MURO / 2, z), Vector3.zero),
+		Material = Enum.Material.Slate,
+		Color = PIEDRA,
+	})
+end
+-- Torres a los lados de la puerta
+for _, signo in { -1, 1 } do
+	parte({
+		Name = "TorrePuerta",
+		Size = Vector3.new(10, CONFIG.ALTO_MURO + 14, 10),
+		CFrame = CFrame.new(Rmuro, (CONFIG.ALTO_MURO + 14) / 2, signo * (CONFIG.ANCHO_PUERTA / 2 + 6)),
+		Material = Enum.Material.Slate,
+		Color = PIEDRA,
+	})
+end
+
+-- ---------- SPAWN DE JUGADORES (en la puerta) ------------------------
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "EntradaCiudad"
+spawn.Size = Vector3.new(16, 1, 16)
+spawn.Position = Vector3.new(Rmuro + 18, 1, 0)
+spawn.Anchored = true
+spawn.Neutral = true
+spawn.Material = Enum.Material.Cobblestone
+spawn.Color = Color3.fromRGB(60, 50, 45)
+spawn.Parent = arena
+
+-- ---------- ZONA QUE ACTIVA AL DEMONIO -------------------------------
+-- (la misma Part que busca DemonLordAI; se crea aquí automáticamente)
+local zona = Instance.new("Part")
+zona.Name = "ZonaCiudad"
+zona.Anchored = true
+zona.CanCollide = false
+zona.CanQuery = false
+zona.Transparency = 1
+zona.Size = Vector3.new(CONFIG.RADIO_CIUDAD * 2, 80, CONFIG.RADIO_CIUDAD * 2)
+zona.Position = Vector3.new(0, 40, 0)
+zona.Parent = Workspace   -- en Workspace para que el AI la encuentre con WaitForChild
+
+print(("[CiudadArena] Arena construida. Puerta en X=%d. Coloca 'SenorLlamas' en el centro.")
+	:format(math.floor(spawn.Position.X)))
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX3"><Properties><string name="Name">DemonLordAI</string><ProtectedString name="Source"><![CDATA[--!strict
+-- =====================================================================
+--  EL SEÑOR DE LAS LLAMAS  -  Cerebro del jefe (Roblox / Luau)
+-- =====================================================================
+--  * Detecta cuando un jugador ENTRA a la ciudad.
+--  * Despierta, te mira y encadena PODERES BRUTALES por FASES.
+--  * Tiene vida y barra de jefe: puedes derrotarlo.
+--  * Al morir, explota en una erupción final.
+--
+--  DÓNDE VA:  pega este Script en  ServerScriptService.
+--
+--  NECESITAS EN EL WORKSPACE (ver README):
+--   * Model "SenorLlamas" con PrimaryPart (p.ej. "HumanoidRootPart").
+--       - (opcional) Parts "Ojos" y "ManoDerecha" para que salgan de ahí.
+--   * Part "ZonaCiudad" (Anchored, CanCollide=false, Transparency=1).
+--   * ModuleScript "Poderes" en ReplicatedStorage.
+-- =====================================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Poderes = require(ReplicatedStorage:WaitForChild("Poderes"))
+
+-- ---------- CONFIGURACIÓN --------------------------------------------
+local CONFIG = {
+	NOMBRE_DEMONIO = "SenorLlamas",
+	NOMBRE_ZONA    = "ZonaCiudad",
+
+	VIDA_MAX       = 5000,     -- vida del jefe
+	GIRO_SUAVE     = 5,        -- qué tan rápido voltea a verte
+
+	-- Rango de golpes cuerpo a cuerpo (zarpazo cuando te le acercas)
+	RANGO_MELEE    = 24,       -- distancia (studs) para que use garras
+	DANO_MELEE     = 38,       -- daño del zarpazo
+	ESPERA_MELEE   = 1.0,      -- segundos entre zarpazos
+
+	COOLDOWN_GOLPE = 0.4,      -- seg mínimos entre golpes de la MISMA arma al jefe
+
+	-- Tiempo entre ataques según la fase (menos = más agresivo)
+	ESPERA_FASE1   = 3.5,      -- 100%–66% de vida
+	ESPERA_FASE2   = 2.2,      -- 66%–33% de vida
+	ESPERA_FASE3   = 1.3,      -- 33%–0%  de vida (modo furia)
+}
+-- --------------------------------------------------------------------
+
+local demonio = Workspace:WaitForChild(CONFIG.NOMBRE_DEMONIO)
+local zona = Workspace:WaitForChild(CONFIG.NOMBRE_ZONA) :: BasePart
+local raiz: BasePart = (demonio :: Model).PrimaryPart
+	or (demonio:FindFirstChild("HumanoidRootPart") :: BasePart)
+assert(raiz, "El Model '" .. CONFIG.NOMBRE_DEMONIO .. "' necesita un PrimaryPart.")
+
+Poderes.configurar(demonio, raiz)
+
+-- ---------- VIDA DEL JEFE + BARRA ------------------------------------
+local vida = Instance.new("NumberValue")
+vida.Name = "VidaJefe"
+vida.Value = CONFIG.VIDA_MAX
+vida.Parent = demonio
+
+local function crearBarraDeVida()
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "BarraJefe"
+	bb.Size = UDim2.new(14, 0, 1.4, 0)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, raiz.Size.Y / 2 + 8, 0)
+	bb.AlwaysOnTop = true
+	bb.Adornee = raiz
+	bb.Parent = raiz
+
+	local fondo = Instance.new("Frame")
+	fondo.Size = UDim2.fromScale(1, 1)
+	fondo.BackgroundColor3 = Color3.fromRGB(20, 5, 5)
+	fondo.BorderSizePixel = 0
+	fondo.Parent = bb
+
+	local relleno = Instance.new("Frame")
+	relleno.Name = "Relleno"
+	relleno.Size = UDim2.fromScale(1, 1)
+	relleno.BackgroundColor3 = Color3.fromRGB(255, 70, 20)
+	relleno.BorderSizePixel = 0
+	relleno.Parent = fondo
+
+	local titulo = Instance.new("TextLabel")
+	titulo.Size = UDim2.fromScale(1, 1)
+	titulo.BackgroundTransparency = 1
+	titulo.Text = "☠  EL SEÑOR DE LAS LLAMAS  ☠"
+	titulo.Font = Enum.Font.GothamBold
+	titulo.TextColor3 = Color3.new(1, 1, 1)
+	titulo.TextScaled = true
+	titulo.Parent = fondo
+
+	vida.Changed:Connect(function(v)
+		relleno.Size = UDim2.fromScale(math.clamp(v / CONFIG.VIDA_MAX, 0, 1), 1)
+	end)
+end
+crearBarraDeVida()
+
+-- Daño al jefe: cualquier parte que toque al demonio y tenga el atributo
+-- "DanoArma" (lo pones en espadas/proyectiles del jugador) le resta vida.
+-- Con cooldown por arma para que no se drene de un solo toque continuo.
+local ultimoGolpe: { [Instance]: number } = {}
+local function recibirGolpe(hit: BasePart)
+	local dano = hit:GetAttribute("DanoArma")
+	if typeof(dano) ~= "number" or vida.Value <= 0 then return end
+	local ahora = os.clock()
+	if ultimoGolpe[hit] and (ahora - ultimoGolpe[hit] < CONFIG.COOLDOWN_GOLPE) then return end
+	ultimoGolpe[hit] = ahora
+	vida.Value = math.max(0, vida.Value - dano)
+end
+
+for _, parte in demonio:GetDescendants() do
+	if parte:IsA("BasePart") then
+		parte.Touched:Connect(recibirGolpe)
+	end
+end
+
+-- ---------- ZONA / OBJETIVO ------------------------------------------
+local function dentroDe(parte: BasePart, pos: Vector3): boolean
+	local l = parte.CFrame:PointToObjectSpace(pos)
+	local h = parte.Size / 2
+	return math.abs(l.X) <= h.X and math.abs(l.Y) <= h.Y and math.abs(l.Z) <= h.Z
+end
+
+local function objetivoEnCiudad(): BasePart?
+	local mejor: BasePart? = nil
+	local mejorDist = math.huge
+	for _, jugador in Players:GetPlayers() do
+		local pj = jugador.Character
+		local hum = pj and pj:FindFirstChildOfClass("Humanoid")
+		local hrp = pj and pj:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if hum and hrp and hum.Health > 0 and dentroDe(zona, hrp.Position) then
+			local d = (hrp.Position - raiz.Position).Magnitude
+			if d < mejorDist then mejorDist, mejor = d, hrp end
+		end
+	end
+	return mejor
+end
+
+local function mirarHacia(pos: Vector3, dt: number)
+	local plano = Vector3.new(pos.X, raiz.Position.Y, pos.Z)
+	local deseado = CFrame.lookAt(raiz.Position, plano)
+	raiz.CFrame = raiz.CFrame:Lerp(deseado, math.clamp(CONFIG.GIRO_SUAVE * dt, 0, 1))
+end
+
+-- ---------- ELECCIÓN DE PODERES POR FASE -----------------------------
+local function faseActual(): (number, number)
+	local f = vida.Value / CONFIG.VIDA_MAX
+	if f > 0.66 then return 1, CONFIG.ESPERA_FASE1 end
+	if f > 0.33 then return 2, CONFIG.ESPERA_FASE2 end
+	return 3, CONFIG.ESPERA_FASE3
+end
+
+local function lanzarPoder(fase: number, objetivo: BasePart)
+	-- Cada fase abre ataques nuevos y más brutales.
+	local opciones
+	if fase == 1 then
+		opciones = { "bolas", "rayo", "nova" }
+	elseif fase == 2 then
+		opciones = { "bolas", "rayo", "nova", "meteoros", "pilares" }
+	else
+		opciones = { "meteoros", "pilares", "lava", "nova", "rayo", "colosal" }
+	end
+	local elegido = opciones[math.random(1, #opciones)]
+
+	if elegido == "bolas" then
+		Poderes.bolasInfernales(5 + fase, 22)
+	elseif elegido == "rayo" then
+		Poderes.rayoOcular(objetivo, 2.5, 25 + fase * 5)
+	elseif elegido == "nova" then
+		Poderes.novaDeFuego(45 + fase * 8, 40 + fase * 5)
+	elseif elegido == "meteoros" then
+		Poderes.lluviaDeMeteoros(6 + fase * 2, 28, 14)
+	elseif elegido == "pilares" then
+		Poderes.pilaresDeFuego(35, 10)
+	elseif elegido == "lava" then
+		Poderes.erupcionDeLava(16, 28)
+	elseif elegido == "colosal" then
+		Poderes.meteoroColosal(90, 45)
+	end
+	return elegido
+end
+
+-- ---------- MUERTE DEL JEFE ------------------------------------------
+local muerto = false
+local function morir()
+	muerto = true
+	print("[SeñorLlamas] ¡El Señor de las Llamas ha sido derrotado!")
+	-- Explosión final espectacular
+	Poderes.novaDeFuego(90, 0)
+	Poderes.erupcionDeLava(24, 0)
+	local exp = Instance.new("Explosion")
+	exp.Position = raiz.Position
+	exp.BlastRadius = 60
+	exp.BlastPressure = 0
+	exp.Parent = Workspace
+	task.wait(0.4)
+	-- Se desvanece
+	for _, p in demonio:GetDescendants() do
+		if p:IsA("BasePart") then
+			p.Anchored = true
+			game:GetService("TweenService"):Create(
+				p, TweenInfo.new(1.5), { Transparency = 1 }
+			):Play()
+		end
+	end
+end
+
+-- ---------- BUCLE PRINCIPAL ------------------------------------------
+local activo = false
+task.spawn(function()
+	while not muerto do
+		local objetivo = objetivoEnCiudad()
+		if objetivo and vida.Value > 0 then
+			if not activo then
+				activo = true
+				print("[SeñorLlamas] ¡Un intruso entró! El demonio despierta. 🔥")
+			end
+			-- Si el jugador está cerca -> ZARPAZO (rango de golpes).
+			-- Si está lejos -> poder a distancia según la fase.
+			local espera
+			local dist = (objetivo.Position - raiz.Position).Magnitude
+			if dist <= CONFIG.RANGO_MELEE then
+				Poderes.zarpazo(CONFIG.DANO_MELEE, CONFIG.RANGO_MELEE, 120)
+				espera = CONFIG.ESPERA_MELEE
+			else
+				local fase, e = faseActual()
+				lanzarPoder(fase, objetivo)
+				espera = e
+			end
+			-- durante la espera, lo mantenemos mirando al objetivo
+			local t = 0
+			while t < espera and not muerto do
+				local dt = RunService.Heartbeat:Wait()
+				t += dt
+				local o = objetivoEnCiudad()
+				if o then mirarHacia(o.Position, dt) end
+			end
+		else
+			if activo then
+				activo = false
+				print("[SeñorLlamas] La ciudad quedó vacía. El demonio duerme.")
+			end
+			task.wait(0.4)
+		end
+
+		if vida.Value <= 0 and not muerto then
+			morir()
+		end
+	end
+end)
+
+print("[SeñorLlamas] Jefe cargado. Vida: " .. CONFIG.VIDA_MAX .. ". Esperando intrusos...")
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX4"><Properties><string name="Name">EspadaInfernal</string><ProtectedString name="Source"><![CDATA[--!strict
+-- =====================================================================
+--  ESPADA INFERNAL  -  Arma del jugador para pelear al jefe (Luau)
+-- =====================================================================
+--  Crea una espada y se la da a CADA jugador al entrar. La espada tiene
+--  el atributo "DanoArma", así que al golpear al "SenorLlamas" le baja la
+--  vida (el jefe ya tiene cooldown por arma para que sea justo).
+--
+--  DÓNDE VA:  pega este Script en  ServerScriptService.
+--
+--  Cómo pelear: equipa la espada (tecla 1) y golpea al demonio acercándote.
+-- =====================================================================
+
+local Players = game:GetService("Players")
+local StarterPack = game:GetService("StarterPack")
+
+-- ---------- CONFIGURACIÓN --------------------------------------------
+local DANO_ESPADA = 60      -- daño por golpe al jefe
+-- --------------------------------------------------------------------
+
+local function crearEspada(): Tool
+	local tool = Instance.new("Tool")
+	tool.Name = "Espada Infernal"
+	tool.RequiresHandle = true
+	tool.CanBeDropped = false
+
+	local hoja = Instance.new("Part")
+	hoja.Name = "Handle"
+	hoja.Size = Vector3.new(0.6, 6, 0.3)
+	hoja.Material = Enum.Material.Neon
+	hoja.Color = Color3.fromRGB(255, 110, 20)
+	hoja.CanCollide = false
+	hoja:SetAttribute("DanoArma", DANO_ESPADA)   -- <- esto le hace daño al jefe
+
+	-- resplandor de la hoja
+	local luz = Instance.new("PointLight")
+	luz.Color = Color3.fromRGB(255, 120, 30)
+	luz.Brightness = 3
+	luz.Range = 10
+	luz.Parent = hoja
+
+	-- fuego en la hoja
+	local fuego = Instance.new("ParticleEmitter")
+	fuego.Texture = "rbxassetid://243660364"
+	fuego.Color = ColorSequence.new(Color3.fromRGB(255, 220, 90), Color3.fromRGB(200, 30, 10))
+	fuego.LightEmission = 1
+	fuego.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.5),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	fuego.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	fuego.Lifetime = NumberRange.new(0.3, 0.6)
+	fuego.Rate = 40
+	fuego.Speed = NumberRange.new(2, 5)
+	fuego.Parent = hoja
+
+	hoja.Parent = tool
+
+	-- empuñadura
+	local mango = Instance.new("Part")
+	mango.Name = "Mango"
+	mango.Size = Vector3.new(0.5, 1.6, 0.5)
+	mango.Material = Enum.Material.Metal
+	mango.Color = Color3.fromRGB(40, 30, 25)
+	mango.CanCollide = false
+	local soldar = Instance.new("WeldConstraint")
+	soldar.Part0 = hoja
+	soldar.Part1 = mango
+	mango.CFrame = hoja.CFrame * CFrame.new(0, -3.5, 0)
+	mango.Parent = tool
+	soldar.Parent = tool
+
+	return tool
+end
+
+-- La espada base vive en StarterPack: todos la reciben al aparecer.
+crearEspada().Parent = StarterPack
+
+-- Y a quien ya esté jugando, se la damos de una.
+for _, jugador in Players:GetPlayers() do
+	local mochila = jugador:FindFirstChildOfClass("Backpack")
+	if mochila then
+		crearEspada().Parent = mochila
+	end
+end
+
+print("[EspadaInfernal] Espada entregada. ¡A pelear contra el Señor de las Llamas! ⚔️🔥")
+]]></ProtectedString></Properties></Item></Item></roblox>
